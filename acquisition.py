@@ -1,6 +1,8 @@
 #coding: utf-8
 '''
-收购系统函数测试
+第3代DC收购系统
+- 制作: 南岛科学技术大学简明脚本研究所 Blues_Tkun
+- 鸣谢: DC交通大学交达脚本研究院 kunjinkao_xs
 '''
 
 from dev.magicmq.pyspigot import PySpigot as ps # type: ignore
@@ -12,9 +14,14 @@ from decimal import Decimal, ROUND_DOWN  # Essentials经济系统处理用
 from util.anvilgui import anvilInputer # AnvilGUI
 from net.wesjd.anvilgui import AnvilGUI # AnvilGUI Java Lib
 import math
+from datetime import date
 
-script_config = ps.config.loadConfig('acquisition.yml')
-    
+historyDetail = ps.config.loadConfig('acquisition/historyDetail.yml')
+historyMoney = ps.config.loadConfig('acquisition/historyMoney.yml')
+Config = ps.config.loadConfig('acquisition/parameterConfig.yml')
+historyMoneyDict = historyMoney.getValues(True)
+ConfigDict = Config.getValues(True)
+
 class calculate:
     def __init__(self):
         self.dictGoods = ["DIAMOND", "GOLD_INGOT", "IRON_INGOT", "COAL", "OAK_LOG", "BONE", "DIRT"]
@@ -86,10 +93,10 @@ def test(sender, label, args):
         # 设置关闭界面时的回调函数（必须是一个输入）
         def closeHandler(stateSnapshot):
             if itemNumHolder[0] >= 1 and itemNumHolder[0] <= ItemInHandNumber:
-                configSection = script_config.getConfigurationSection(str(player.getName()))
+                historyDetailSection = historyDetail.getConfigurationSection(str(player.getName()))
 
-                if configSection is not None:   # 检查玩家是否有收购记录
-                    tempDict = configSection.getValues(True)
+                if historyDetailSection is not None:   # 检查玩家是否有收购记录
+                    tempDict = historyDetailSection.getValues(True)
                     residue = Decimal(str(tempDict["RESIDUE"]))
                     if ItemInHand.getType().toString() in tempDict.keys():
                         testHistory = sum(tempDict[ItemInHand.getType().toString()])
@@ -126,11 +133,21 @@ def test(sender, label, args):
                 except:
                     tempList = [int(countSold)] + [0 for _ in range(23)]
                     tempDict[ItemInHand.getType().toString()] = tempList
-                script_config.set(str(player.getName()), tempDict)
-                script_config.save()
+                historyDetail.set(str(player.getName()), tempDict)
+                historyDetail.save()
                 
                 user = Bukkit.getServer().getPluginManager().getPlugin("Essentials").getUser(player)
                 user.giveMoney(testprice)
+                
+                # 将玩家获得DC币记录至长期数据库
+                cycleNow = ConfigDict["cycleNow"]
+                try:
+                    tempInt = historyMoneyDict[str(cycleNow)][str(player.getName())]
+                    tempInt += testprice
+                except:
+                    tempInt = testprice
+                historyMoney.set(str(cycleNow)+"."+str(player.getName()), tempInt)
+                historyMoney.save()
             else:
                 player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&a 取消收购。"))
 
@@ -147,12 +164,12 @@ def test(sender, label, args):
 
 def newCycle(sender, label, args):
     player = sender.getPlayer()  # 获取玩家对象
-    configDict = script_config.getValues(True)
+    configDict = historyDetail.getValues(True)
 
     for sectionName in configDict:
         if "." not in sectionName:
             playerName = sectionName
-            playerConfig = script_config.getConfigurationSection(str(sectionName)).getValues(True)
+            playerConfig = historyDetail.getConfigurationSection(str(sectionName)).getValues(True)
 
         elif str(sectionName)[len(playerName)+1:] in calculate().dictGoods:
             goodsName = str(sectionName)[len(playerName)+1:]
@@ -160,12 +177,14 @@ def newCycle(sender, label, args):
             tempList = [0]
             for i in range(23):
                 tempList.append(calculate().calHistory(section[i], t=i, g=0.7, tau=4))
-            script_config.set(str(sectionName), tempList)
+            historyDetail.set(str(sectionName), tempList)
 
         elif str(sectionName)[len(playerName)+1:] == "RESIDUE": # 确定新周期余额，待补充
-            script_config.set(str(sectionName), Decimal('10000.00'))
-            
-    script_config.save()
+            historyDetail.set(str(sectionName), Decimal('10000.00'))
+    
+    historyDetail.save()
+    historyMoney.createSection(str(date.today()))
+    historyMoney.save()
     player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&a 系统已进入新周期！"))
 
     return True
