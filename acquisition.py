@@ -55,9 +55,10 @@ class calculate:
         return int(math.floor(numberInit * (math.exp(g * (t - tau)) + 1) / (math.exp(g * (t + 1 - tau)) + 1)))
 
 
-class GUI():
+class GUI:
     def __init__(self, player):
         self.player = player
+        self.historyDetailSection = historyDetail.getConfigurationSection(str(self.player.getName()))
 
     def clickHandler(self, slot, stateSnapshot):
         if slot == AnvilGUI.Slot.OUTPUT: # GUI输入
@@ -81,40 +82,39 @@ class GUI():
                 return [AnvilGUI.ResponseAction.replaceInputText(u"请输入出售数量")]
 
     
-    # 设置关闭界面时的回调函数（必须是一个输入）
     def closeHandler(self, stateSnapshot):
         if itemNumHolder[0] >= 1 and itemNumHolder[0] <= itemToSellNumber:
-            historyDetailSection = historyDetail.getConfigurationSection(str(self.player.getName()))
-
-            if historyDetailSection is not None:   # 检查玩家是否有收购记录
-                tempDict = historyDetailSection.getValues(True)
+            if self.historyDetailSection is not None:   # 检查玩家是否有收购记录
+                tempDict = self.historyDetailSection.getValues(True)
                 residue = Decimal(str(tempDict["RESIDUE"]))
                 if itemToSell in tempDict.keys():
-                    testHistory = sum(tempDict[itemToSell])
+                    itemHistory = sum(tempDict[itemToSell])
                 else:
-                    testHistory = 0
+                    itemHistory = 0
+
             else:
                 residue = Decimal('10000.00')   # 默认本周期剩余收购额度
                 tempDict = {"RESIDUE": residue}
-                testHistory = 0
+                itemHistory = 0
+
             itemNum = itemNumHolder[0]
-            testPriceInit = calculate().dictPrice[itemID]
-            testEffic = calculate().dictEffic[itemID]
-            calResult = calculate().calPrice(count=itemNum, priceInit=testPriceInit, effic=testEffic, countHistory=testHistory, residue=residue)
+            itemPriceInit = calculate().dictPrice[itemID]
+            itemEffic = calculate().dictEffic[itemID]
+            calResult = calculate().calPrice(count=itemNum, priceInit=itemPriceInit, effic=itemEffic, countHistory=itemHistory, residue=residue)
             countSold = calResult[0]
-            testprice = calResult[1].quantize(Decimal('0.00'), rounding=ROUND_DOWN)
-            testUnitPrice = calResult[2]
+            itemPrice = calResult[1].quantize(Decimal('0.00'), rounding=ROUND_DOWN)
+            itemUnitPrice = calResult[2]
             overflow = calResult[3]
 
             self.player.getInventory().removeItem(org.bukkit.inventory.ItemStack(itemToSellType, countSold)) # 删除出售物品
-            residue -= testprice
+            residue -= itemPrice
             if countSold == 0:
                 self.player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&a 由于当前商品单价超过剩余收购额度，未能售出物品。"))
             else:
                 if overflow:
                     self.player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&a 由于剩余收购额度不足，仅售出了一部分物品。"))
                 self.player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&a 售出&b" + str(countSold) + u"个" + itemToSellName
-                                                                        + u"&a，获得&b" + str(testprice) + u" DC币&a！平均单价为&b" + str(testUnitPrice) + u" DC币&a。"))
+                                                                        + u"&a，获得&b" + str(itemPrice) + u" DC币&a！平均单价为&b" + str(itemUnitPrice) + u" DC币&a。"))
                 self.player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&a 本周期剩余收购额度&b" + str(residue) + u" DC币&a。"))
 
             tempDict["RESIDUE"] = residue
@@ -127,15 +127,15 @@ class GUI():
             historyDetail.save()
             
             user = Bukkit.getServer().getPluginManager().getPlugin("Essentials").getUser(self.player)
-            user.giveMoney(testprice)
+            user.giveMoney(itemPrice)
             
             # 将玩家获得DC币记录至长期数据库
             cycleNow = ConfigDict["cycleNow"]
             try:
                 tempInt = historyMoneyDict[str(cycleNow)][str(self.player.getName())]
-                tempInt += testprice
+                tempInt += itemPrice
             except:
-                tempInt = testprice
+                tempInt = itemPrice
             historyMoney.set(str(cycleNow)+"."+str(self.player.getName()), tempInt)
             historyMoney.save()
         else:
