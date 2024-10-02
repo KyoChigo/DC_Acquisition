@@ -55,6 +55,93 @@ class calculate:
         return int(math.floor(numberInit * (math.exp(g * (t - tau)) + 1) / (math.exp(g * (t + 1 - tau)) + 1)))
 
 
+class GUI():
+    def __init__(self, player):
+        self.player = player
+
+    def clickHandler(self, slot, stateSnapshot):
+        if slot == AnvilGUI.Slot.OUTPUT: # GUI输入
+            text = stateSnapshot.getText() # 获取玩家输入
+            if text is not None:
+                try:
+                    itemNumHolder[0] = int(text)
+                except ValueError:
+                    self.player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&c 输入格式不正确！"))
+
+                if int(text) > itemToSellNumber: # 限制出售物品数量的上下限
+                    self.player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&c 您只有&b" + str(itemToSellNumber) + u"个"
+                                                                            + itemToSellName + u"&a！"))
+                    return [AnvilGUI.ResponseAction.replaceInputText(u"您没有那么多&b" + itemToSellName + u"&a！")]
+                elif int(text) <= 0:
+                    return [AnvilGUI.ResponseAction.replaceInputText(u"不能设置非正数！")]
+                else:
+                    return [AnvilGUI.ResponseAction.close()]
+                
+            else:
+                return [AnvilGUI.ResponseAction.replaceInputText(u"请输入出售数量")]
+
+    
+    # 设置关闭界面时的回调函数（必须是一个输入）
+    def closeHandler(self, stateSnapshot):
+        if itemNumHolder[0] >= 1 and itemNumHolder[0] <= itemToSellNumber:
+            historyDetailSection = historyDetail.getConfigurationSection(str(self.player.getName()))
+
+            if historyDetailSection is not None:   # 检查玩家是否有收购记录
+                tempDict = historyDetailSection.getValues(True)
+                residue = Decimal(str(tempDict["RESIDUE"]))
+                if itemToSell in tempDict.keys():
+                    testHistory = sum(tempDict[itemToSell])
+                else:
+                    testHistory = 0
+            else:
+                residue = Decimal('10000.00')   # 默认本周期剩余收购额度
+                tempDict = {"RESIDUE": residue}
+                testHistory = 0
+            itemNum = itemNumHolder[0]
+            testPriceInit = calculate().dictPrice[itemID]
+            testEffic = calculate().dictEffic[itemID]
+            calResult = calculate().calPrice(count=itemNum, priceInit=testPriceInit, effic=testEffic, countHistory=testHistory, residue=residue)
+            countSold = calResult[0]
+            testprice = calResult[1].quantize(Decimal('0.00'), rounding=ROUND_DOWN)
+            testUnitPrice = calResult[2]
+            overflow = calResult[3]
+
+            self.player.getInventory().removeItem(org.bukkit.inventory.ItemStack(itemToSellType, countSold)) # 删除出售物品
+            residue -= testprice
+            if countSold == 0:
+                self.player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&a 由于当前商品单价超过剩余收购额度，未能售出物品。"))
+            else:
+                if overflow:
+                    self.player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&a 由于剩余收购额度不足，仅售出了一部分物品。"))
+                self.player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&a 售出&b" + str(countSold) + u"个" + itemToSellName
+                                                                        + u"&a，获得&b" + str(testprice) + u" DC币&a！平均单价为&b" + str(testUnitPrice) + u" DC币&a。"))
+                self.player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&a 本周期剩余收购额度&b" + str(residue) + u" DC币&a。"))
+
+            tempDict["RESIDUE"] = residue
+            try:
+                tempDict[itemToSell][0] += countSold
+            except:
+                tempList = [int(countSold)] + [0 for _ in range(23)]
+                tempDict[itemToSell] = tempList
+            historyDetail.set(str(player.getName()), tempDict)
+            historyDetail.save()
+            
+            user = Bukkit.getServer().getPluginManager().getPlugin("Essentials").getUser(self.player)
+            user.giveMoney(testprice)
+            
+            # 将玩家获得DC币记录至长期数据库
+            cycleNow = ConfigDict["cycleNow"]
+            try:
+                tempInt = historyMoneyDict[str(cycleNow)][str(self.player.getName())]
+                tempInt += testprice
+            except:
+                tempInt = testprice
+            historyMoney.set(str(cycleNow)+"."+str(self.player.getName()), tempInt)
+            historyMoney.save()
+        else:
+            self.player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&a 取消收购。"))
+
+
 def main(sender, label, args):
     player = sender.getPlayer()  # 获取玩家对象
     itemToSell = str(args[0])  # 收购物品
@@ -74,89 +161,10 @@ def main(sender, label, args):
             inputGUI = anvilInputer()
             itemNumHolder = [0]  # 使用列表保存itemNum
 
-            def clickHandler(slot, stateSnapshot):
-                if slot == AnvilGUI.Slot.OUTPUT: # GUI输入
-                    text = stateSnapshot.getText() # 获取玩家输入
-                    if text is not None:
-                        try:
-                            itemNumHolder[0] = int(text)
-                        except ValueError:
-                            player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&c 输入格式不正确！"))
+            ### GUI
+            inputGUI.onClick(GUI().clickHandler)
 
-                        if int(text) > itemToSellNumber: # 限制出售物品数量的上下限
-                            player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&c 您只有&b" + str(itemToSellNumber) + u"个"
-                                                                                    + itemToSellName + u"&a！"))
-                            return [AnvilGUI.ResponseAction.replaceInputText(u"您没有那么多&b" + itemToSellName + u"&a！")]
-                        elif int(text) <= 0:
-                            return [AnvilGUI.ResponseAction.replaceInputText(u"不能设置非正数！")]
-                        else:
-                            return [AnvilGUI.ResponseAction.close()]
-                        
-                    else:
-                        return [AnvilGUI.ResponseAction.replaceInputText(u"请输入出售数量")]
-            inputGUI.onClick(clickHandler)
-            
-            # 设置关闭界面时的回调函数（必须是一个输入）
-            def closeHandler(stateSnapshot):
-                if itemNumHolder[0] >= 1 and itemNumHolder[0] <= itemToSellNumber:
-                    historyDetailSection = historyDetail.getConfigurationSection(str(player.getName()))
-
-                    if historyDetailSection is not None:   # 检查玩家是否有收购记录
-                        tempDict = historyDetailSection.getValues(True)
-                        residue = Decimal(str(tempDict["RESIDUE"]))
-                        if itemToSell in tempDict.keys():
-                            testHistory = sum(tempDict[itemToSell])
-                        else:
-                            testHistory = 0
-                    else:
-                        residue = Decimal('10000.00')   # 默认本周期剩余收购额度
-                        tempDict = {"RESIDUE": residue}
-                        testHistory = 0
-                    itemNum = itemNumHolder[0]
-                    testPriceInit = calculate().dictPrice[itemID]
-                    testEffic = calculate().dictEffic[itemID]
-                    calResult = calculate().calPrice(count=itemNum, priceInit=testPriceInit, effic=testEffic, countHistory=testHistory, residue=residue)
-                    countSold = calResult[0]
-                    testprice = calResult[1].quantize(Decimal('0.00'), rounding=ROUND_DOWN)
-                    testUnitPrice = calResult[2]
-                    overflow = calResult[3]
-
-                    player.getInventory().removeItem(org.bukkit.inventory.ItemStack(itemToSellType, countSold)) # 删除出售物品
-                    residue -= testprice
-                    if countSold == 0:
-                        player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&a 由于当前商品单价超过剩余收购额度，未能售出物品。"))
-                    else:
-                        if overflow:
-                            player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&a 由于剩余收购额度不足，仅售出了一部分物品。"))
-                        player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&a 售出&b" + str(countSold) + u"个" + itemToSellName
-                                                                                + u"&a，获得&b" + str(testprice) + u" DC币&a！平均单价为&b" + str(testUnitPrice) + u" DC币&a。"))
-                        player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&a 本周期剩余收购额度&b" + str(residue) + u" DC币&a。"))
-
-                    tempDict["RESIDUE"] = residue
-                    try:
-                        tempDict[itemToSell][0] += countSold
-                    except:
-                        tempList = [int(countSold)] + [0 for _ in range(23)]
-                        tempDict[itemToSell] = tempList
-                    historyDetail.set(str(player.getName()), tempDict)
-                    historyDetail.save()
-                    
-                    user = Bukkit.getServer().getPluginManager().getPlugin("Essentials").getUser(player)
-                    user.giveMoney(testprice)
-                    
-                    # 将玩家获得DC币记录至长期数据库
-                    cycleNow = ConfigDict["cycleNow"]
-                    try:
-                        tempInt = historyMoneyDict[str(cycleNow)][str(player.getName())]
-                        tempInt += testprice
-                    except:
-                        tempInt = testprice
-                    historyMoney.set(str(cycleNow)+"."+str(player.getName()), tempInt)
-                    historyMoney.save()
-                else:
-                    player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&a 取消收购。"))
-
-            inputGUI.onClose(lambda stateSnapshot : ps.scheduler.runTaskLater(closeHandler, 1, stateSnapshot)) # 重要：延迟1ticks再打开，否则不会触发Inventory事件！
+            inputGUI.onClose(lambda stateSnapshot : ps.scheduler.runTaskLater(GUI().closeHandler, 1, stateSnapshot)) # 重要：延迟1ticks再打开，否则不会触发Inventory事件！
             inputGUI.title(u"DC收购窗口")
             inputGUI.text(u"在此输入出售数量")
             inputGUI.open(player)
