@@ -1,4 +1,5 @@
 import math
+import random
 import datetime
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
@@ -13,14 +14,15 @@ def is_weekend(date):
     "判断是否为周末"
     return date.weekday() >= 5
 
-def Gauss(x, mu, sigma):
-    "正规化Gauss分布"
-    return math.exp(-(x - mu) ** 2 / (2 * sigma ** 2)) / (sigma * math.sqrt(2 * math.pi))
-
 def superGauss(x, mu, sigma):
     "超级Gauss分布"
     n = 3
     return math.exp(-((x - mu) ** (2 * n)) / (2 * sigma ** 2))
+
+def randomAddictive():
+    "Gauss噪音"
+    sigma = 0.025
+    return random.gauss(0, sigma)
 
 def indexEnvi(time_list):
     "物价环境指数"
@@ -38,7 +40,7 @@ def indexEnvi(time_list):
             index *= 0.95   # 小假期物价下调
         elif is_weekend(date) and date not in [datetime.date(2024, 10, 1) + datetime.timedelta(days=int(day)) for day in range(6)]:
             index *= 0.98   # 周末物价下调
-        index_list.append(index)
+        index_list.append(index + randomAddictive())
     
     return index_list
 
@@ -52,7 +54,7 @@ plt.title('Plot of indexEnvi(time)')
 plt.xlabel('date')
 plt.ylabel('environmental index')
 plt.xlim(datetime.date(2024, 1, 1), datetime.date(2024, 12, 31))
-plt.ylim(0.7, 1.1)
+plt.ylim(min(index_values)*0.8, max(index_values)*1.1)
 plt.grid(True)
 plt.legend()
 plt.xticks(rotation=45)
