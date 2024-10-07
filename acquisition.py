@@ -115,7 +115,7 @@ class GUIinput:
 
     def open(self):
         self.inputGUI.onClick(self.clickHandler)
-        self.inputGUI.onClose(lambda stateSnapshot: ps.scheduler.runTaskLater(self.closeHandler(stateSnapshot), 1)) # 重要：延迟1ticks再打开，否则不会触发Inventory事件！
+        self.inputGUI.onClose(lambda stateSnapshot: ps.scheduler.runTaskLater(lambda: self.closeHandler(self), 1, stateSnapshot)) # 重要：延迟1ticks再打开，否则不会触发Inventory事件！
         self.inputGUI.title(u"DC收购窗口：" + self.itemToSellName)
         self.inputGUI.text(u"在此输入出售数量")
         self.inputGUI.open(self.player)
