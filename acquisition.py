@@ -143,13 +143,12 @@ class GUIinput:
                     return [AnvilGUI.ResponseAction.replaceInputText(u"不能设置非正数！")]
                 else:
                     return [AnvilGUI.ResponseAction.close()]
-                
             else:
                 return [AnvilGUI.ResponseAction.replaceInputText(u"请输入出售数量")]
 
     def closeHandler(self, stateSnapshot):
         if self.itemNumHolder[0] >= 1 and self.itemNumHolder[0] <= self.itemToSellNumber:
-            historyDetailSection = historyDetail.getConfigurationSection(str(self.player.getName()))
+            historyDetailSection = self.historyDetail.getConfigurationSection(str(self.player.getName()))
 
             if historyDetailSection is not None:   # 检查玩家是否有收购记录
                 tempDict = historyDetailSection.getValues(True)
@@ -221,7 +220,6 @@ def main(sender, label, args):
             GUI.open()
         else:
             player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&c 您背包内没有&b" + itemToSellName + u"&a！"))
-
     else:
         player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&c 物品不在收购范围内！"))
     
@@ -230,13 +228,13 @@ def main(sender, label, args):
 
 def newCycle(sender, label, args):
     player = sender.getPlayer()  # 获取玩家对象
-    configDict = historyDetail.getValues(True)
+    historyDetail = ps.config.loadConfig('acquisition/historyDetail.yml')
+    historyDetailDict = historyDetail.getValues(True)
 
-    for sectionName in configDict:
+    for sectionName in historyDetailDict:
         if "." not in sectionName:
             playerName = sectionName
             playerConfig = historyDetail.getConfigurationSection(str(sectionName)).getValues(True)
-
         elif str(sectionName)[len(playerName)+1:] in calculate().dictGoods:
             goodsName = str(sectionName)[len(playerName)+1:]
             section = playerConfig[goodsName]
@@ -244,10 +242,10 @@ def newCycle(sender, label, args):
             for i in range(23):
                 tempList.append(calculate().calHistory(section[i], t=i, g=0.7, tau=4))
             historyDetail.set(str(sectionName), tempList)
-
         elif str(sectionName)[len(playerName)+1:] == "RESIDUE": # 确定新周期余额，待补充
             historyDetail.set(str(sectionName), Decimal('10000.00'))
     
+    historyDetail.save()
     Config.set("cycleNow", str(date.today()))
     Config.save()
     historyMoney.createSection(str(date.today()))
@@ -263,6 +261,7 @@ def indexEnviUpdate(sender, label, args):
     force = "FALSE"
     if len(args) == 1:
         force = str(args[0])
+
     if today != date.today().strftime("%Y-%m-%d") or force == "TRUE":
         todayIndex = Decimal(calculate().indexEnvi(int(datetime.strptime(today, '%Y-%m-%d').strftime('%j')))).quantize(Decimal('0.000'), rounding=ROUND_DOWN)
         Config.set('todayIndexEnvi', todayIndex)
