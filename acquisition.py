@@ -138,7 +138,7 @@ class GUIinput:
                 if int(text) > self.itemToSellNumber: # 限制出售物品数量的上下限
                     self.player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&c 您只有&b" + str(self.itemToSellNumber) + u"个"
                                                                             + self.itemToSellName + u"&a！"))
-                    return [AnvilGUI.ResponseAction.replaceInputText(u"您没有那么多&b" + self.itemToSellName + u"&a！")]
+                    return [AnvilGUI.ResponseAction.replaceInputText(u"您没有那么多" + self.itemToSellName + u"！")]
                 elif int(text) <= 0:
                     return [AnvilGUI.ResponseAction.replaceInputText(u"不能设置非正数！")]
                 else:
@@ -230,6 +230,8 @@ def newCycle(sender, label, args):
     player = sender.getPlayer()  # 获取玩家对象
     historyDetail = ps.config.loadConfig('acquisition/historyDetail.yml')
     historyDetailDict = historyDetail.getValues(True)
+    historyMoney = ps.config.loadConfig('acquisition/historyMoney.yml')
+    historyMoneyDict = historyMoney.getValues(True)
 
     for sectionName in historyDetailDict:
         if "." not in sectionName:
@@ -243,12 +245,13 @@ def newCycle(sender, label, args):
                 tempList.append(calculate().calHistory(section[i], t=i, g=0.7, tau=4))
             historyDetail.set(str(sectionName), tempList)
         elif str(sectionName)[len(playerName)+1:] == "RESIDUE": # 确定新周期余额，待补充
-            historyDetail.set(str(sectionName), Decimal('10000.00'))
+            historyDetail.set(str(sectionName), Decimal('5000.00'))
     
     historyDetail.save()
     Config.set("cycleNow", str(date.today()))
     Config.save()
-    historyMoney.createSection(str(date.today()))
+    if str(date.today()) not in historyMoneyDict.keys():
+        historyMoney.createSection(str(date.today()))
     historyMoney.save()
     player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&a 系统已进入新周期！"))
 
