@@ -111,6 +111,14 @@ class GUIinput:
         self.historyMoney = ps.config.loadConfig('acquisition/historyMoney.yml')
         self.historyMoneyDict = self.historyMoney.getValues(True)
         self.historyDetail = ps.config.loadConfig('acquisition/historyDetail.yml')
+        self.inputGUI = anvilInputer()
+
+    def open(self):
+        self.inputGUI.onClick(self.clickHandler)
+        self.inputGUI.onClose(lambda stateSnapshot: ps.scheduler.runTaskLater(self.closeHandler(stateSnapshot), 1)) # 重要：延迟1ticks再打开，否则不会触发Inventory事件！
+        self.inputGUI.title(u"DC收购窗口：" + self.itemToSellName)
+        self.inputGUI.text(u"在此输入出售数量")
+        self.inputGUI.open(self.player)
 
     def canSell(self):
         if self.itemToSellNumber != 0:
@@ -209,16 +217,8 @@ def main(sender, label, args):
     if itemToSell in calculate().dictGoods:
         player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&a 欢迎来到&b" + itemToSellName + u"&a收购窗口！"))
         GUI = GUIinput(player, itemToSell)
-
-        if GUI.canSell:
-            inputGUI = anvilInputer()
-            inputGUI.onClick(GUI.clickHandler)
-            
-            inputGUI.onClose(lambda stateSnapshot:ps.scheduler.runTaskLater(GUI.closeHandler(stateSnapshot), 1)) # 重要：延迟1ticks再打开，否则不会触发Inventory事件！
-            inputGUI.title(u"DC收购窗口：" + itemToSellName)
-            inputGUI.text(u"在此输入出售数量")
-            inputGUI.open(player)
-
+        if GUI.canSell():
+            GUI.open()
         else:
             player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&c 您背包内没有&b" + itemToSellName + u"&a！"))
 
