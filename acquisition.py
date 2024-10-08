@@ -31,24 +31,22 @@ class calculate:
         self.dictGoodsZh = ["钻石", "金锭", "铁锭", "煤炭", "橡木原木", "骨头", "泥土"]
         self.dictPrice = [20.00, 6.00, 1.50, 0.85, 1.00, 1.00, 0.06]
         self.dictEffic = [0.0004, 0.0004, 0.0004, 0.0003, 0.0002, 0.0002, 0.0016]
-        self.holiday = [date(2024, 4, 4) + timedelta(days=int(day+1)) for day in range(2)] \
-            + [date(2024, 5, 1) + timedelta(days=int(day+1)) for day in range(4)] \
-            + [date(2024, 6, 8) + timedelta(days=int(day+1)) for day in range(2)] \
-            + [date(2024, 9, 15) + timedelta(days=int(day+1)) for day in range(2)] \
-            + [date(2024, 10, 1) + timedelta(days=int(day+1)) for day in range(6)]
         self.todayIndex = Decimal(Config.get('todayIndexEnvi'))
 
     def calPrice(self, count=1, countHistory=0, priceInit=1.00, effic=0.0002, residue=0.00):
+        "价格计算函数"
         totalPrice = Decimal('0.00')   # 总获益金额
-        residue = Decimal(residue)
+        residue = Decimal(residue)  # 剩余收购额度
         overflow = False    # 判断是否超过本周期余额
         countSold = 0
         for i in range(count):
             priceNow = priceInit * math.exp(-effic*(i+countHistory+1))  # 当前单价
             priceNow = Decimal(priceNow).quantize(Decimal('0.00'), rounding=ROUND_DOWN)
+
             if totalPrice + priceNow > residue:
                 overflow = True
                 break
+
             totalPrice += priceNow
             countSold += 1
         
@@ -61,8 +59,43 @@ class calculate:
 
         return [countSold, totalPrice, unitPrice, overflow]
 
+    def priceQuery(self, countHistory=0, priceInit=1.00, effic=0.0002, residue=0.00, maxQuantity=64):
+        "价格预览函数"
+        totalPrice = Decimal('0.00')   # 总获益金额
+        residue = Decimal(residue)  # 剩余收购额度
+        overflow = False    # 判断是否超过本周期余额
+        countMax = max(maxQuantity, 64) # maxQuantity为背包内当前物品总数
+        priceQueryValue = []
+        priceQueryOverflow = []
+        priceQueryValueUnit = []
+
+        for i in range(countMax):
+            priceNow = priceInit * math.exp(-effic*(i+countHistory+1))  # 当前单价
+            priceNow = Decimal(priceNow).quantize(Decimal('0.00'), rounding=ROUND_DOWN)
+            totalPrice += priceNow
+
+            if overflow == False and totalPrice + priceNow > residue:
+                overflow = True
+            
+            if i+1 in [1, 10, 64, countMax]:
+                priceQueryValue.append(totalPrice)
+                priceQueryOverflow.append(overflow)
+                priceQueryValueUnit.append(Decimal(totalPrice/(i+1)).quantize(Decimal('0.00'), rounding=ROUND_DOWN))
+        
+        return [priceQueryValue, priceQueryOverflow, priceQueryValueUnit]
+
+
+class NewCycleProcess:
+    "新周期处理用"
+    def __init__(self):
+        self.holiday = [date(2024, 4, 4) + timedelta(days=int(day+1)) for day in range(2)] \
+            + [date(2024, 5, 1) + timedelta(days=int(day+1)) for day in range(4)] \
+            + [date(2024, 6, 8) + timedelta(days=int(day+1)) for day in range(2)] \
+            + [date(2024, 9, 15) + timedelta(days=int(day+1)) for day in range(2)] \
+            + [date(2024, 10, 1) + timedelta(days=int(day+1)) for day in range(6)]
+
     def calHistory(self, numberInit, t, g=1, tau=0.5):
-        "numberInit: 初始数量, g: 逆时间系数(越大则临界点附近变化越剧烈), tau: 临界点"
+        "新周期历史记录衰减计算函数；numberInit: 初始数量, g: 逆时间系数(越大则临界点附近变化越剧烈), tau: 临界点"
         return int(math.floor(numberInit * (math.exp(g * (t - tau)) + 1) / (math.exp(g * (t + 1 - tau)) + 1)))
     
     def superGauss(self, x, mu, sigma):
@@ -75,7 +108,7 @@ class calculate:
         return random.gauss(0, sigma)
     
     def indexEnvi(self, day):
-        "物价环境指数"
+        "物价环境指数计算函数"
         alpha = 0.15
         beta = 0.075
         
@@ -244,7 +277,7 @@ def newCycle(sender, label, args):
             section = playerConfig[goodsName]
             tempList = [0]
             for i in range(23):
-                tempList.append(calculate().calHistory(section[i], t=i, g=0.7, tau=4))
+                tempList.append(NewCycleProcess().calHistory(section[i], t=i, g=0.7, tau=4))
             historyDetail.set(str(sectionName), tempList)
         elif str(sectionName)[len(playerName)+1:] == "RESIDUE": # 确定新周期余额，待补充
             historyDetail.set(str(sectionName), Decimal('5000.00'))
@@ -269,13 +302,23 @@ def indexEnviUpdate(sender, label, args):
         force = str(args[0])
 
     if today != date.today().strftime("%Y-%m-%d") or force == "TRUE":
-        todayIndex = Decimal(calculate().indexEnvi(int(datetime.strptime(today, '%Y-%m-%d').strftime('%j')))).quantize(Decimal('0.000'), rounding=ROUND_DOWN)
+        yesterdayIndex = Decimal(Config.get('todayIndexEnvi')).quantize(Decimal('0.000'))
+        todayIndex = Decimal(NewCycleProcess().indexEnvi(int(datetime.strptime(today, '%Y-%m-%d').strftime('%j')))).quantize(Decimal('0.000'), rounding=ROUND_DOWN)
+        deltaIndex = todayIndex - yesterdayIndex
+
         Config.set('todayIndexEnvi', todayIndex)
         Config.set('today', str(date.today()))
-        player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&a 新的一天，新的开始！今日价格环境指数为&b" + str(todayIndex) + u"&a！"))
         Config.save()
+
+        player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&a 新的一天，新的开始！今日价格环境指数为&b" + str(todayIndex) + u"&a！"))
+        if deltaIndex > Decimal('0.000'):
+            player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&a 价格环境指数较昨日相比&b增加" + str(deltaIndex) + u"&a！"))
+        elif deltaIndex < Decimal('0.000'):
+            player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&a 价格环境指数较昨日相比&c减少" + str(deltaIndex) + u"&a！"))
+        else:
+            player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&a 价格环境指数较昨日未发生变化！"))
     else:
-        player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&a 今日价格环境指数已经更新！当前指数为&b" + str(Config.get('todayIndexEnvi')) + u"&a！"))
+        player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&a 今日价格环境指数已经更新！当前指数为&b" + str(Decimal(Config.get('todayIndexEnvi')).quantize(Decimal('0.000'))) + u"&a！"))
     
     return True
 
