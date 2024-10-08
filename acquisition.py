@@ -117,7 +117,7 @@ class GUIinput:
         self.inputGUI.onClick(self.clickHandler)
         self.inputGUI.onClose(lambda stateSnapshot: ps.scheduler.runTaskLater(lambda: self.closeHandler(self), 1, stateSnapshot)) # 重要：延迟1ticks再打开，否则不会触发Inventory事件！
         self.inputGUI.title(u"DC收购窗口：" + self.itemToSellName)
-        self.inputGUI.text(u"在此输入出售数量")
+        self.inputGUI.text(u"输入数量 (您有" + str(self.itemToSellNumber) + u"个)")
         self.inputGUI.open(self.player)
 
     def canSell(self):
@@ -208,6 +208,7 @@ class GUIinput:
 
 
 def main(sender, label, args):
+    "收购主函数"
     player = sender.getPlayer()  # 获取玩家对象
     itemToSell = str(args[0])  # 收购物品
     itemID = calculate().dictGoods.index(itemToSell)
@@ -227,6 +228,7 @@ def main(sender, label, args):
 
 
 def newCycle(sender, label, args):
+    "新周期执行函数"
     player = sender.getPlayer()  # 获取玩家对象
     historyDetail = ps.config.loadConfig('acquisition/historyDetail.yml')
     historyDetailDict = historyDetail.getValues(True)
@@ -259,7 +261,8 @@ def newCycle(sender, label, args):
 
 
 def indexEnviUpdate(sender, label, args):
-    player = sender.getPlayer()  # 获取玩家对象
+    "价格环境指数更新函数"
+    player = sender.getPlayer()
     today = Config.get('today')
     force = "FALSE"
     if len(args) == 1:
@@ -272,7 +275,15 @@ def indexEnviUpdate(sender, label, args):
         player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&a 新的一天，新的开始！今日价格环境指数为&b" + str(todayIndex) + u"&a！"))
         Config.save()
     else:
-        player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&a 今日价格环境指数为&b" + str(Config.get('todayIndexEnvi')) + u"&a！"))
+        player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&a 今日价格环境指数已经更新！当前指数为&b" + str(Config.get('todayIndexEnvi')) + u"&a！"))
+    
+    return True
+
+
+def indexEnviQuery(sender, label, args):
+    "价格环境指数查询函数"
+    player = sender.getPlayer()
+    player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&a 今日价格环境指数为&b" + str(Decimal(Config.get('todayIndexEnvi')).quantize(Decimal('0.000'))) + u"&a！"))
     
     return True
 
@@ -280,3 +291,4 @@ def indexEnviUpdate(sender, label, args):
 ps.command.registerCommand(main, "acquisition")
 ps.command.registerCommand(newCycle, "newcycle")
 ps.command.registerCommand(indexEnviUpdate, "newday")
+ps.command.registerCommand(indexEnviQuery, "indexenvi")
