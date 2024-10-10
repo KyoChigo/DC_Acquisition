@@ -10,20 +10,25 @@
 from dev.magicmq.pyspigot import PySpigot as ps # type: ignore
 import org.bukkit.inventory # type: ignore
 from org.bukkit.plugin.java import JavaPlugin # type: ignore
-from org.bukkit import Bukkit, ChatColor # type: ignore
+from org.bukkit import Bukkit, ChatColor, Material # type: ignore
 from com.earth2me.essentials import Essentials # type: ignore
 from decimal import Decimal, ROUND_DOWN  # Essentials经济系统处理用
 from util.anvilgui import anvilInputer # AnvilGUI
+from util.gui import initializeGUI, initializeItemStack, spawnSeparators, guiHolder, closeGuiForAll
 from net.wesjd.anvilgui import AnvilGUI # AnvilGUI Java Lib
 import math
 import random
 from datetime import date, timedelta, datetime
+from org.bukkit.event.inventory import InventoryClickEvent
+from org.bukkit.inventory import Inventory
 
 historyDetail = ps.config.loadConfig('acquisition/historyDetail.yml')
 historyMoney = ps.config.loadConfig('acquisition/historyMoney.yml')
 Config = ps.config.loadConfig('acquisition/parameterConfig.yml')
 historyMoneyDict = historyMoney.getValues(True)
 ConfigDict = Config.getValues(True)
+temp_itemToSell = {}
+temp_itemNum = {}
 
 class calculate:
     def __init__(self):
@@ -32,6 +37,9 @@ class calculate:
         self.dictPrice = [20.00, 6.00, 1.50, 0.85, 1.00, 1.00, 0.06]
         self.dictEffic = [0.0004, 0.0004, 0.0004, 0.0003, 0.0002, 0.0002, 0.0016]
         self.todayIndex = Decimal(Config.get('todayIndexEnvi'))
+        self.historyMoney = ps.config.loadConfig('acquisition/historyMoney.yml')
+        self.historyMoneyDict = self.historyMoney.getValues(True)
+        self.historyDetail = ps.config.loadConfig('acquisition/historyDetail.yml')
 
     def calPrice(self, count=1, countHistory=0, priceInit=1.00, effic=0.0002, residue=0.00):
         "价格计算函数"
@@ -82,7 +90,67 @@ class calculate:
                 priceQueryOverflow.append(overflow)
                 priceQueryValueUnit.append(Decimal(totalPrice/(i+1)).quantize(Decimal('0.00'), rounding=ROUND_DOWN))
         
-        return [priceQueryValue, priceQueryOverflow, priceQueryValueUnit]
+        return priceQueryValue + priceQueryOverflow + priceQueryValueUnit
+
+    def sellOut(self, player, itemToSell):
+        historyDetailSection = self.historyDetail.getConfigurationSection(str(player.getName()))
+        itemToSellType = Material.valueOf(itemToSell)
+        itemID = self.dictGoods.index(itemToSell)
+        itemToSellName = self.dictGoodsZh[itemID].decode('utf-8')
+
+        if historyDetailSection is not None:   # 检查玩家是否有收购记录
+            tempDict = historyDetailSection.getValues(True)
+            residue = Decimal(str(tempDict["RESIDUE"]))
+            if itemToSell in self.dictGoods:
+                goodsHistory = sum(tempDict[itemToSell])
+            else:
+                goodsHistory = 0
+        else:
+            residue = NewCycleProcess().residueRenew()
+            tempDict = {"RESIDUE": residue}
+            goodsHistory = 0
+            
+        itemNum = temp_itemNum[player.getName()]
+        priceInit = self.dictPrice[itemID]
+        goodsEffic = self.dictEffic[itemID]
+        calResult = self.calPrice(count=itemNum, priceInit=priceInit, effic=goodsEffic, countHistory=goodsHistory, residue=residue)
+        countSold = calResult[0]
+        goodsPrice = calResult[1].quantize(Decimal('0.00'), rounding=ROUND_DOWN)
+        unitPrice = calResult[2]
+        overflow = calResult[3]
+
+        player.getInventory().removeItem(org.bukkit.inventory.ItemStack(itemToSellType, countSold)) # 删除出售物品
+        residue -= goodsPrice
+        if countSold == 0:
+            player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&a 由于当前商品单价超过剩余收购额度，未能售出物品。"))
+        else:
+            if overflow:
+                player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&a 由于剩余收购额度不足，仅售出了一部分物品。"))
+            player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&a 售出&b" + str(countSold) + u"个" + itemToSellName
+                                                                    + u"&a，获得&b" + str(goodsPrice) + u" DC币&a！平均单价为&b" + str(unitPrice) + u" DC币&a。"))
+            player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&a 本周期剩余收购额度&b" + str(residue) + u" DC币&a。"))
+
+        tempDict["RESIDUE"] = residue
+        try:
+            tempDict[itemToSell][0] += countSold
+        except:
+            tempList = [int(countSold)] + [0 for _ in range(23)]
+            tempDict[itemToSell] = tempList
+        self.historyDetail.set(str(player.getName()), tempDict)
+        self.historyDetail.save()
+        
+        user = Bukkit.getServer().getPluginManager().getPlugin("Essentials").getUser(player)
+        user.giveMoney(goodsPrice)
+        
+        # 将玩家获得DC币记录至长期数据库
+        cycleNow = ConfigDict["cycleNow"]
+        try:
+            tempInt = Decimal(self.historyMoneyDict[str(cycleNow)+"."+str(player.getName())]).quantize(Decimal('0.00'), rounding=ROUND_DOWN)
+            tempInt += goodsPrice
+        except:
+            tempInt = goodsPrice
+        self.historyMoney.set(str(cycleNow)+"."+str(player.getName()), tempInt)
+        self.historyMoney.save()
 
 
 class NewCycleProcess:
@@ -126,10 +194,13 @@ class NewCycleProcess:
         
         return index + self.randomAddictive()
 
+    def residueRenew(self):
+        "新周期各玩家收购额度计算函数"
+        return Decimal("5000.00")
 
-class GUIinput:
+
+class GUIselect:
     def __init__(self, player, itemToSell):
-        self.itemNumHolder = [0]
         self.player = player
         self.historyDetailSection = historyDetail.getConfigurationSection(str(self.player.getName()))
         self.itemToSell = itemToSell
@@ -144,6 +215,79 @@ class GUIinput:
         self.historyMoney = ps.config.loadConfig('acquisition/historyMoney.yml')
         self.historyMoneyDict = self.historyMoney.getValues(True)
         self.historyDetail = ps.config.loadConfig('acquisition/historyDetail.yml')
+
+    def canSell(self):
+        if self.itemToSellNumber != 0:
+            return True
+        else:
+            return False
+
+    def open(self):
+        if self.historyDetailSection is not None:   # 检查玩家是否有收购记录
+            tempDict = self.historyDetailSection.getValues(True)
+            residue = Decimal(str(tempDict["RESIDUE"]))
+            if self.itemToSell in tempDict.keys():
+                goodsHistory = sum(tempDict[self.itemToSell])
+            else:
+                goodsHistory = 0
+        else:
+            goodsHistory = 0
+            residue = NewCycleProcess().residueRenew()
+        
+        priceInit = calculate().dictPrice[self.itemID]
+        goodsEffic = calculate().dictEffic[self.itemID]
+
+        priceQueryList = calculate().priceQuery(countHistory=goodsHistory, priceInit=priceInit, effic=goodsEffic, residue=residue, maxQuantity=self.itemToSellNumber)
+
+        selectGUI = initializeGUI("acq.select", 9, u"DC收购窗口：" + self.itemToSellName)
+        selectGUI.setItem(0, initializeItemStack(Material.valueOf(self.itemToSell), u"§a当前收购物品：§b" + self.itemToSellName))
+        selectGUI.setItem(8, initializeItemStack(Material.RED_WOOL, u"§c取消收购"))
+        selectGUI.setItem(2, initializeItemStack(Material.GOLD_NUGGET, u"§a出售1个", "", u"§f预计总价：" + str(priceQueryList[0]), 
+                                                  u"§f预计单价：" + str(priceQueryList[8]), u"§c超出本周期剩余收购额度" if str(priceQueryList[4]) else u"§a可出售"))
+        selectGUI.setItem(3, initializeItemStack(Material.GOLD_INGOT, u"§a出售10个", "", u"§f预计总价：" + str(priceQueryList[1]),
+                                                  u"§f预计单价：" + str(priceQueryList[9]), u"§c超出本周期剩余收购额度" if str(priceQueryList[5]) else u"§a可出售"))
+        selectGUI.setItem(4, initializeItemStack(Material.GOLD_BLOCK, u"§a出售64个", "", u"§f预计总价：" + str(priceQueryList[2]),
+                                                  u"§f预计单价：" + str(priceQueryList[10]), u"§c超出本周期剩余收购额度" if str(priceQueryList[6]) else u"§a可出售"))
+        selectGUI.setItem(5, initializeItemStack(Material.BARREL, u"§a出售背包内全部（§b" + str(self.itemToSellNumber) + u"个§a）",
+                                                  "", u"§f预计总价：" + str(priceQueryList[3]),
+                                                  u"§f预计单价：" + str(priceQueryList[11]), u"§c超出本周期剩余收购额度" if str(priceQueryList[7]) else u"§a可出售"))
+        selectGUI.setItem(6, initializeItemStack(Material.LEGACY_BOOK_AND_QUILL, u"§a自定义出售", "", u"§e注意：无法预览价格"))
+        spawnSeparators(selectGUI, 1, 1) # 挡板
+        spawnSeparators(selectGUI, 7, 7) # 挡板
+
+        return selectGUI
+
+    def handler(self, e):
+        clickInt = e.getSlot()
+        if clickInt == 2:
+            temp_itemNum[self.player.getName()] = 1
+            calculate().sellOut(player=self.player, itemToSell=self.itemToSell)
+            self.player.closeInventory()
+        elif clickInt == 3:
+            temp_itemNum[self.player.getName()] = 10
+            calculate().sellOut(player=self.player, itemToSell=self.itemToSell)
+            self.player.closeInventory()
+        elif clickInt == 4:
+            temp_itemNum[self.player.getName()] = 64
+            calculate().sellOut(player=self.player, itemToSell=self.itemToSell)
+            self.player.closeInventory()
+        elif clickInt == 5:
+            temp_itemNum[self.player.getName()] = self.itemToSellNumber
+            calculate().sellOut(player=self.player, itemToSell=self.itemToSell)
+            self.player.closeInventory()
+        elif clickInt == 6:
+            GUIinput(self.player, self.itemToSell).open()
+        elif clickInt == 8:
+            self.player.closeInventory()
+        else:
+            e.setCancelled(True)
+        
+        return True
+
+
+class GUIinput(GUIselect):
+    def __init__(self, player, itemToSell):
+        GUIselect.__init__(self, player, itemToSell)
         self.inputGUI = anvilInputer()
 
     def open(self):
@@ -153,20 +297,14 @@ class GUIinput:
         self.inputGUI.text(u"输入数量 (您有" + str(self.itemToSellNumber) + u"个)")
         self.inputGUI.open(self.player)
 
-    def canSell(self):
-        if self.itemToSellNumber != 0:
-            return True
-        else:
-            return False
-
     def clickHandler(self, slot, stateSnapshot):
         if slot == AnvilGUI.Slot.OUTPUT: # GUI输入
             text = stateSnapshot.getText() # 获取玩家输入
             if text is not None:
                 try:
-                    self.itemNumHolder[0] = int(text)
+                    temp_itemNum[self.player.getName()] = int(text)
                 except ValueError:
-                    self.player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&c 输入格式不正确！"))
+                    return [AnvilGUI.ResponseAction.replaceInputText(u"输入格式不正确！")]
 
                 if int(text) > self.itemToSellNumber: # 限制出售物品数量的上下限
                     self.player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&c 您只有&b" + str(self.itemToSellNumber) + u"个"
@@ -180,62 +318,8 @@ class GUIinput:
                 return [AnvilGUI.ResponseAction.replaceInputText(u"请输入出售数量")]
 
     def closeHandler(self, stateSnapshot):
-        if self.itemNumHolder[0] >= 1 and self.itemNumHolder[0] <= self.itemToSellNumber:
-            historyDetailSection = self.historyDetail.getConfigurationSection(str(self.player.getName()))
-
-            if historyDetailSection is not None:   # 检查玩家是否有收购记录
-                tempDict = historyDetailSection.getValues(True)
-                residue = Decimal(str(tempDict["RESIDUE"]))
-                if self.itemToSell in tempDict.keys():
-                    testHistory = sum(tempDict[self.itemToSell])
-                else:
-                    testHistory = 0
-            else:
-                residue = Decimal('10000.00')   # 默认本周期剩余收购额度
-                tempDict = {"RESIDUE": residue}
-                testHistory = 0
-                
-            itemNum = self.itemNumHolder[0]
-            priceInit = calculate().dictPrice[self.itemID]
-            goodsEffic = calculate().dictEffic[self.itemID]
-            calResult = calculate().calPrice(count=itemNum, priceInit=priceInit, effic=goodsEffic, countHistory=testHistory, residue=residue)
-            countSold = calResult[0]
-            goodsPrice = calResult[1].quantize(Decimal('0.00'), rounding=ROUND_DOWN)
-            unitPrice = calResult[2]
-            overflow = calResult[3]
-
-            self.player.getInventory().removeItem(org.bukkit.inventory.ItemStack(self.itemToSellType, countSold)) # 删除出售物品
-            residue -= goodsPrice
-            if countSold == 0:
-                self.player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&a 由于当前商品单价超过剩余收购额度，未能售出物品。"))
-            else:
-                if overflow:
-                    self.player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&a 由于剩余收购额度不足，仅售出了一部分物品。"))
-                self.player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&a 售出&b" + str(countSold) + u"个" + self.itemToSellName
-                                                                        + u"&a，获得&b" + str(goodsPrice) + u" DC币&a！平均单价为&b" + str(unitPrice) + u" DC币&a。"))
-                self.player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&a 本周期剩余收购额度&b" + str(residue) + u" DC币&a。"))
-
-            tempDict["RESIDUE"] = residue
-            try:
-                tempDict[self.itemToSell][0] += countSold
-            except:
-                tempList = [int(countSold)] + [0 for _ in range(23)]
-                tempDict[self.itemToSell] = tempList
-            self.historyDetail.set(str(self.player.getName()), tempDict)
-            self.historyDetail.save()
-            
-            user = Bukkit.getServer().getPluginManager().getPlugin("Essentials").getUser(self.player)
-            user.giveMoney(goodsPrice)
-            
-            # 将玩家获得DC币记录至长期数据库
-            cycleNow = ConfigDict["cycleNow"]
-            try:
-                tempInt = Decimal(self.historyMoneyDict[str(cycleNow)+"."+str(self.player.getName())]).quantize(Decimal('0.00'), rounding=ROUND_DOWN)
-                tempInt += goodsPrice
-            except:
-                tempInt = goodsPrice
-            self.historyMoney.set(str(cycleNow)+"."+str(self.player.getName()), tempInt)
-            self.historyMoney.save()
+        if temp_itemNum[self.player.getName()] >= 1 and temp_itemNum[self.player.getName()] <= self.itemToSellNumber:
+            calculate().sellOut(player=self.player, itemToSell=self.itemToSell)
         else:
             self.player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&a 取消收购。"))
 
@@ -249,9 +333,10 @@ def main(sender, label, args):
 
     if itemToSell in calculate().dictGoods:
         player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&a 欢迎来到&b" + itemToSellName + u"&a收购窗口！"))
-        GUI = GUIinput(player, itemToSell)
+        GUI = GUIselect(player, itemToSell)
         if GUI.canSell():
-            GUI.open()
+            temp_itemToSell[player.getName()] = itemToSell
+            player.openInventory(GUIselect(player, itemToSell).open())
         else:
             player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&c 您背包内没有&b" + itemToSellName + u"&a！"))
     else:
@@ -279,8 +364,8 @@ def newCycle(sender, label, args):
             for i in range(23):
                 tempList.append(NewCycleProcess().calHistory(section[i], t=i, g=0.7, tau=4))
             historyDetail.set(str(sectionName), tempList)
-        elif str(sectionName)[len(playerName)+1:] == "RESIDUE": # 确定新周期余额，待补充
-            historyDetail.set(str(sectionName), Decimal('5000.00'))
+        elif str(sectionName)[len(playerName)+1:] == "RESIDUE": # 确定新周期余额
+            historyDetail.set(str(sectionName), NewCycleProcess().residueRenew())
     
     historyDetail.save()
     Config.set("cycleNow", str(date.today()))
@@ -331,7 +416,25 @@ def indexEnviQuery(sender, label, args):
     return True
 
 
+def onGUIOpen(e):
+    inv = e.getInventory()
+    invHolder = inv.getHolder()
+    if isinstance(invHolder, guiHolder):
+        player = e.getWhoClicked()
+        invName = invHolder.getName()
+
+        if invName.startswith("acq."):
+            itemToSell = temp_itemToSell.get(player.getName())
+            GUIselect(player, itemToSell).handler(e)
+
+
+def stop():
+    "关闭所有打开菜单的玩家"
+    closeGuiForAll("dcpt.")
+
+
 ps.command.registerCommand(main, "acquisition")
 ps.command.registerCommand(newCycle, "newcycle")
 ps.command.registerCommand(indexEnviUpdate, "newday")
 ps.command.registerCommand(indexEnviQuery, "indexenvi")
+ps.listener.registerListener(onGUIOpen, InventoryClickEvent, True)
