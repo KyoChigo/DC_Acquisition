@@ -178,11 +178,8 @@ class NewCycleProcess:
         "Gauss噪音"
         return random.gauss(0, sigma) * amp
     
-    def indexEnvi(self, day):
+    def indexEnvi(self, day, alpha=0.150, beta=0.075):
         "物价环境指数计算函数"
-        alpha = 0.15
-        beta = 0.075
-        
         index = 1
         index -= alpha * self.superGauss(day-1, 31, 16 ** 4)
         index -= alpha * self.superGauss(day-1, 211, 16 ** 4)
@@ -198,6 +195,7 @@ class NewCycleProcess:
         return index + self.randomAddictive(sigma=0.025, amp=1)
 
     def residueActivity(self, activity):
+        "收购额度中活跃额度的计算函数"
         current_day = datetime.now()
         if current_day in self.holidayLong: # 旺季
             return Decimal(min(activity * 250, 10000)).quantize(Decimal('0.00'), rounding=ROUND_DOWN)
@@ -213,7 +211,7 @@ class NewCycleProcess:
         last_month = (current_day.replace(day=1) - timedelta(days=1)).strftime("%Y/%m")
         this_month = current_day.strftime("%Y/%m")
 
-        residueBasic = Decimal(4000 + self.randomAddictive(sigma=0.035, amp=10000)).quantize(Decimal('0.00'), rounding=ROUND_DOWN)
+        residueBasic = Decimal(4000 + self.randomAddictive(sigma=0.035, amp=10000)).quantize(Decimal('0.00'), rounding=ROUND_DOWN) # 基础额度
 
         activityPlayerNow = activity(player).getPlayerHot(this_month)
         if activityPlayerNow != -1: # 若服务器中存在DC交通大学活跃脉冲记录
@@ -299,16 +297,16 @@ class GUIselect:
         selectGUI.setItem(0, initializeItemStack(Material.valueOf(self.itemToSell), u"§a当前收购物品：§b" + self.itemToSellName))
         selectGUI.setItem(8, initializeItemStack(Material.RED_WOOL, u"§c取消收购"))
         selectGUI.setItem(2, initializeItemStack(Material.GOLD_NUGGET, u"§a出售1个", "", u"§f预计总价：" + str(priceQueryList[0]), 
-                                                  u"§f预计单价：" + str(priceQueryList[8]),
+                                                  u"§f对应单价：" + str(priceQueryList[8]),
                                                   u"§c超出剩余收购额度，仅能售出§e" + str(priceQueryList[12]) + u"个" if priceQueryList[4] else u"§a可出售"))
         selectGUI.setItem(3, initializeItemStack(Material.GOLD_INGOT, u"§a出售10个", "", u"§f预计总价：" + str(priceQueryList[1]),
-                                                  u"§f预计单价：" + str(priceQueryList[9]),
+                                                  u"§f对应单价：" + str(priceQueryList[9]),
                                                   u"§c超出剩余收购额度，仅能售出§e" + str(priceQueryList[12]) + u"个" if priceQueryList[5] else u"§a可出售"))
         selectGUI.setItem(4, initializeItemStack(Material.GOLD_BLOCK, u"§a出售64个", "", u"§f预计总价：" + str(priceQueryList[2]),
-                                                  u"§f预计单价：" + str(priceQueryList[10]),
+                                                  u"§f对应单价：" + str(priceQueryList[10]),
                                                   u"§c超出剩余收购额度，仅能售出§e" + str(priceQueryList[12]) + u"个" if priceQueryList[6] else u"§a可出售"))
         selectGUI.setItem(5, initializeItemStack(Material.BARREL, u"§a出售背包内全部（§b" + str(self.itemToSellNumber) + u"个§a）",
-                                                  "", u"§f预计总价：" + str(priceQueryList[3]), u"§f预计单价：" + str(priceQueryList[11]),
+                                                  "", u"§f预计总价：" + str(priceQueryList[3]), u"§f对应单价：" + str(priceQueryList[11]),
                                                   u"§c超出剩余收购额度，仅能售出§e" + str(priceQueryList[12]) + u"个" if priceQueryList[7] else u"§a可出售"))
         selectGUI.setItem(6, initializeItemStack(Material.LEGACY_BOOK_AND_QUILL, u"§a自定义出售", "", u"§e注意：无法预览价格"))
         spawnSeparators(selectGUI, 1, 1) # 挡板
@@ -318,20 +316,9 @@ class GUIselect:
 
     def handler(self, e):
         clickInt = e.getSlot()
-        if clickInt == 2:
-            temp_itemNum[self.player.getName()] = 1
-            calculate().sellOut(player=self.player, itemToSell=self.itemToSell)
-            self.player.closeInventory()
-        elif clickInt == 3:
-            temp_itemNum[self.player.getName()] = 10
-            calculate().sellOut(player=self.player, itemToSell=self.itemToSell)
-            self.player.closeInventory()
-        elif clickInt == 4:
-            temp_itemNum[self.player.getName()] = 64
-            calculate().sellOut(player=self.player, itemToSell=self.itemToSell)
-            self.player.closeInventory()
-        elif clickInt == 5:
-            temp_itemNum[self.player.getName()] = self.itemToSellNumber
+        if clickInt in [2, 3, 4, 5]:
+            itemNum = [1, 10, 64, self.itemToSellNumber]
+            temp_itemNum[self.player.getName()] = itemNum[clickInt - 2]
             calculate().sellOut(player=self.player, itemToSell=self.itemToSell)
             self.player.closeInventory()
         elif clickInt == 6:
