@@ -72,21 +72,23 @@ class calculate:
         priceQueryValue = []
         priceQueryOverflow = []
         priceQueryValueUnit = []
+        priceQueryOverflowNum = []
 
         for i in range(countMax):
             priceNow = priceInit * math.exp(-effic*(i+countHistory+1))  # 当前单价
             priceNow = Decimal(priceNow).quantize(Decimal('0.00'), rounding=ROUND_DOWN)
             totalPrice += priceNow
 
-            if overflow == False and totalPrice + priceNow > residue:
+            if overflow == False and totalPrice > residue:
                 overflow = True
+                priceQueryOverflowNum.append(i)
             
             if i+1 in [1, 10, 64, countMax]:
                 priceQueryValue.append(totalPrice)
                 priceQueryOverflow.append(overflow)
                 priceQueryValueUnit.append(Decimal(totalPrice/(i+1)).quantize(Decimal('0.00'), rounding=ROUND_DOWN))
         
-        return priceQueryValue + priceQueryOverflow + priceQueryValueUnit
+        return priceQueryValue + priceQueryOverflow + priceQueryValueUnit + priceQueryOverflowNum
 
     def sellOut(self, player, itemToSell):
         historyDetailSection = self.historyDetail.getConfigurationSection(str(player.getName()))
@@ -166,10 +168,9 @@ class NewCycleProcess:
         "超Gauss分布"
         return math.exp(-((x - mu) ** 6) / (2 * sigma ** 2))
 
-    def randomAddictive(self):
+    def randomAddictive(self, sigma, amp):
         "Gauss噪音"
-        sigma = 0.025
-        return random.gauss(0, sigma)
+        return random.gauss(0, sigma) * amp
     
     def indexEnvi(self, day):
         "物价环境指数计算函数"
@@ -188,17 +189,21 @@ class NewCycleProcess:
         elif dayDate.weekday() >= 5 and dayDate not in [date(2024, 10, 1) + timedelta(days=int(day-1)) for day in range(6)]:
             index *= 0.98   # 周末物价下调
         
-        return index + self.randomAddictive()
+        return index + self.randomAddictive(sigma=0.025, amp=1)
 
     def residueRenew(self):
         "新周期各玩家收购额度计算函数"
-        return Decimal("5000.00")
+        return Decimal(5000.00 + self.randomAddictive(sigma=0.035, amp=12000)).quantize(Decimal('0.00'), rounding=ROUND_DOWN)
 
 
 class GUIselect:
     def __init__(self, player, itemToSell):
         self.player = player
-        self.historyDetailSection = historyDetail.getConfigurationSection(str(self.player.getName()))
+        self.historyDetail = ps.config.loadConfig('acquisition/historyDetail.yml')
+        self.historyDetailSection = self.historyDetail.getConfigurationSection(str(self.player.getName()))
+        self.historyMoney = ps.config.loadConfig('acquisition/historyMoney.yml')
+        self.historyMoneyDict = self.historyMoney.getValues(True)
+
         self.itemToSell = itemToSell
         self.itemToSellNumber = 0  # 收购物品的总数
         # 遍历玩家的背包
@@ -208,9 +213,6 @@ class GUIselect:
                 self.itemToSellNumber += item.getAmount()
         self.itemID = calculate().dictGoods.index(self.itemToSell)
         self.itemToSellName = calculate().dictGoodsZh[self.itemID].decode('utf-8')
-        self.historyMoney = ps.config.loadConfig('acquisition/historyMoney.yml')
-        self.historyMoneyDict = self.historyMoney.getValues(True)
-        self.historyDetail = ps.config.loadConfig('acquisition/historyDetail.yml')
 
     def canSell(self):
         if self.itemToSellNumber != 0:
@@ -239,14 +241,17 @@ class GUIselect:
         selectGUI.setItem(0, initializeItemStack(Material.valueOf(self.itemToSell), u"§a当前收购物品：§b" + self.itemToSellName))
         selectGUI.setItem(8, initializeItemStack(Material.RED_WOOL, u"§c取消收购"))
         selectGUI.setItem(2, initializeItemStack(Material.GOLD_NUGGET, u"§a出售1个", "", u"§f预计总价：" + str(priceQueryList[0]), 
-                                                  u"§f预计单价：" + str(priceQueryList[8]), u"§c超出本周期剩余收购额度" if str(priceQueryList[4]) == True else u"§a可出售"))
+                                                  u"§f预计单价：" + str(priceQueryList[8]),
+                                                  u"§c超出剩余收购额度，仅能售出§e" + str(priceQueryList[12]) + u"个" if priceQueryList[4] else u"§a可出售"))
         selectGUI.setItem(3, initializeItemStack(Material.GOLD_INGOT, u"§a出售10个", "", u"§f预计总价：" + str(priceQueryList[1]),
-                                                  u"§f预计单价：" + str(priceQueryList[9]), u"§c超出本周期剩余收购额度" if str(priceQueryList[5]) == True else u"§a可出售"))
+                                                  u"§f预计单价：" + str(priceQueryList[9]),
+                                                  u"§c超出剩余收购额度，仅能售出§e" + str(priceQueryList[12]) + u"个" if priceQueryList[5] else u"§a可出售"))
         selectGUI.setItem(4, initializeItemStack(Material.GOLD_BLOCK, u"§a出售64个", "", u"§f预计总价：" + str(priceQueryList[2]),
-                                                  u"§f预计单价：" + str(priceQueryList[10]), u"§c超出本周期剩余收购额度" if str(priceQueryList[6]) == True else u"§a可出售"))
+                                                  u"§f预计单价：" + str(priceQueryList[10]),
+                                                  u"§c超出剩余收购额度，仅能售出§e" + str(priceQueryList[12]) + u"个" if priceQueryList[6] else u"§a可出售"))
         selectGUI.setItem(5, initializeItemStack(Material.BARREL, u"§a出售背包内全部（§b" + str(self.itemToSellNumber) + u"个§a）",
-                                                  "", u"§f预计总价：" + str(priceQueryList[3]),
-                                                  u"§f预计单价：" + str(priceQueryList[11]), u"§c超出本周期剩余收购额度" if str(priceQueryList[7]) == True else u"§a可出售"))
+                                                  "", u"§f预计总价：" + str(priceQueryList[3]), u"§f预计单价：" + str(priceQueryList[11]),
+                                                  u"§c超出剩余收购额度，仅能售出§e" + str(priceQueryList[12]) + u"个" if priceQueryList[7] else u"§a可出售"))
         selectGUI.setItem(6, initializeItemStack(Material.LEGACY_BOOK_AND_QUILL, u"§a自定义出售", "", u"§e注意：无法预览价格"))
         spawnSeparators(selectGUI, 1, 1) # 挡板
         spawnSeparators(selectGUI, 7, 7) # 挡板
@@ -397,7 +402,7 @@ def indexEnviUpdate(sender, label, args):
         if deltaIndex > Decimal('0.000'):
             player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&a 价格环境指数较昨日相比&b增加" + str(deltaIndex) + u"&a！"))
         elif deltaIndex < Decimal('0.000'):
-            player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&a 价格环境指数较昨日相比&c减少" + str(deltaIndex) + u"&a！"))
+            player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&a 价格环境指数较昨日相比&c减少" + str(deltaIndex)[1:] + u"&a！"))
         else:
             player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&a 价格环境指数较昨日未发生变化！"))
     else:
@@ -408,8 +413,21 @@ def indexEnviUpdate(sender, label, args):
 
 def indexEnviQuery(sender, label, args):
     "价格环境指数查询函数"
+    Config = ps.config.loadConfig('acquisition/parameterConfig.yml')
     player = sender.getPlayer()
     player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&a 今日价格环境指数为&b" + str(Decimal(Config.get('todayIndexEnvi')).quantize(Decimal('0.000'))) + u"&a！"))
+    
+    return True
+
+
+def residueQuery(sender, label, args):
+    "剩余收购额度查询函数"
+    player = sender.getPlayer()
+    historyDetail = ps.config.loadConfig('acquisition/historyDetail.yml')
+    historyDetailSection = historyDetail.getConfigurationSection(str(player.getName()))
+    tempDict = historyDetailSection.getValues(True)
+    residue = Decimal(str(tempDict["RESIDUE"]))
+    player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&a 您本周期剩余收购额度为&b" + str(residue.quantize(Decimal('0.00'))) + u" DC币&a！"))
     
     return True
 
@@ -434,5 +452,6 @@ def stop():
 ps.command.registerCommand(main, "acquisition")
 ps.command.registerCommand(newCycle, "newcycle")
 ps.command.registerCommand(indexEnviUpdate, "newday")
-ps.command.registerCommand(indexEnviQuery, "indexenvi")
+ps.command.registerCommand(indexEnviQuery, "acqindexenvi")
+ps.command.registerCommand(residueQuery, "acqresidue")
 ps.listener.registerListener(onGUIOpen, InventoryClickEvent, True)
