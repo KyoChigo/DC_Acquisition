@@ -7,26 +7,20 @@
         南岛科学技术大学简明脚本研究所 Sun_Yu_Xuan
 '''
 
+import math
+import random
+from decimal import Decimal, ROUND_DOWN
+from datetime import date, timedelta, datetime
 from dev.magicmq.pyspigot import PySpigot as ps # type: ignore
 import org.bukkit.inventory # type: ignore
 from org.bukkit.plugin.java import JavaPlugin # type: ignore
 from org.bukkit import Bukkit, ChatColor, Material # type: ignore
 from com.earth2me.essentials import Essentials # type: ignore
-from decimal import Decimal, ROUND_DOWN  # Essentials经济系统处理用
 from util.anvilgui import anvilInputer # AnvilGUI
 from util.gui import initializeGUI, initializeItemStack, spawnSeparators, guiHolder, closeGuiForAll
 from net.wesjd.anvilgui import AnvilGUI # AnvilGUI Java Lib
-import math
-import random
-from datetime import date, timedelta, datetime
 from org.bukkit.event.inventory import InventoryClickEvent
-from org.bukkit.inventory import Inventory
 
-historyDetail = ps.config.loadConfig('acquisition/historyDetail.yml')
-historyMoney = ps.config.loadConfig('acquisition/historyMoney.yml')
-Config = ps.config.loadConfig('acquisition/parameterConfig.yml')
-historyMoneyDict = historyMoney.getValues(True)
-ConfigDict = Config.getValues(True)
 temp_itemToSell = {}
 temp_itemNum = {}
 
@@ -36,7 +30,9 @@ class calculate:
         self.dictGoodsZh = ["钻石", "金锭", "铁锭", "煤炭", "橡木原木", "骨头", "泥土"]
         self.dictPrice = [20.00, 6.00, 1.50, 0.85, 1.00, 1.00, 0.06]
         self.dictEffic = [0.0004, 0.0004, 0.0004, 0.0003, 0.0002, 0.0002, 0.0016]
-        self.todayIndex = Decimal(Config.get('todayIndexEnvi'))
+        self.Config = ps.config.loadConfig('acquisition/parameterConfig.yml')
+        self.ConfigDict = self.Config.getValues(True)
+        self.todayIndex = Decimal(self.Config.get('todayIndexEnvi'))
         self.historyMoney = ps.config.loadConfig('acquisition/historyMoney.yml')
         self.historyMoneyDict = self.historyMoney.getValues(True)
         self.historyDetail = ps.config.loadConfig('acquisition/historyDetail.yml')
@@ -143,7 +139,7 @@ class calculate:
         user.giveMoney(goodsPrice)
         
         # 将玩家获得DC币记录至长期数据库
-        cycleNow = ConfigDict["cycleNow"]
+        cycleNow = self.ConfigDict["cycleNow"]
         try:
             tempInt = Decimal(self.historyMoneyDict[str(cycleNow)+"."+str(player.getName())]).quantize(Decimal('0.00'), rounding=ROUND_DOWN)
             tempInt += goodsPrice
@@ -243,14 +239,14 @@ class GUIselect:
         selectGUI.setItem(0, initializeItemStack(Material.valueOf(self.itemToSell), u"§a当前收购物品：§b" + self.itemToSellName))
         selectGUI.setItem(8, initializeItemStack(Material.RED_WOOL, u"§c取消收购"))
         selectGUI.setItem(2, initializeItemStack(Material.GOLD_NUGGET, u"§a出售1个", "", u"§f预计总价：" + str(priceQueryList[0]), 
-                                                  u"§f预计单价：" + str(priceQueryList[8]), u"§c超出本周期剩余收购额度" if str(priceQueryList[4]) else u"§a可出售"))
+                                                  u"§f预计单价：" + str(priceQueryList[8]), u"§c超出本周期剩余收购额度" if str(priceQueryList[4]) == True else u"§a可出售"))
         selectGUI.setItem(3, initializeItemStack(Material.GOLD_INGOT, u"§a出售10个", "", u"§f预计总价：" + str(priceQueryList[1]),
-                                                  u"§f预计单价：" + str(priceQueryList[9]), u"§c超出本周期剩余收购额度" if str(priceQueryList[5]) else u"§a可出售"))
+                                                  u"§f预计单价：" + str(priceQueryList[9]), u"§c超出本周期剩余收购额度" if str(priceQueryList[5]) == True else u"§a可出售"))
         selectGUI.setItem(4, initializeItemStack(Material.GOLD_BLOCK, u"§a出售64个", "", u"§f预计总价：" + str(priceQueryList[2]),
-                                                  u"§f预计单价：" + str(priceQueryList[10]), u"§c超出本周期剩余收购额度" if str(priceQueryList[6]) else u"§a可出售"))
+                                                  u"§f预计单价：" + str(priceQueryList[10]), u"§c超出本周期剩余收购额度" if str(priceQueryList[6]) == True else u"§a可出售"))
         selectGUI.setItem(5, initializeItemStack(Material.BARREL, u"§a出售背包内全部（§b" + str(self.itemToSellNumber) + u"个§a）",
                                                   "", u"§f预计总价：" + str(priceQueryList[3]),
-                                                  u"§f预计单价：" + str(priceQueryList[11]), u"§c超出本周期剩余收购额度" if str(priceQueryList[7]) else u"§a可出售"))
+                                                  u"§f预计单价：" + str(priceQueryList[11]), u"§c超出本周期剩余收购额度" if str(priceQueryList[7]) == True else u"§a可出售"))
         selectGUI.setItem(6, initializeItemStack(Material.LEGACY_BOOK_AND_QUILL, u"§a自定义出售", "", u"§e注意：无法预览价格"))
         spawnSeparators(selectGUI, 1, 1) # 挡板
         spawnSeparators(selectGUI, 7, 7) # 挡板
@@ -352,6 +348,7 @@ def newCycle(sender, label, args):
     historyDetailDict = historyDetail.getValues(True)
     historyMoney = ps.config.loadConfig('acquisition/historyMoney.yml')
     historyMoneyDict = historyMoney.getValues(True)
+    Config = ps.config.loadConfig('acquisition/parameterConfig.yml')
 
     for sectionName in historyDetailDict:
         if "." not in sectionName:
@@ -381,6 +378,7 @@ def newCycle(sender, label, args):
 def indexEnviUpdate(sender, label, args):
     "价格环境指数更新函数"
     player = sender.getPlayer()
+    Config = ps.config.loadConfig('acquisition/parameterConfig.yml')
     today = Config.get('today')
     force = "FALSE"
     if len(args) == 1:
@@ -430,7 +428,7 @@ def onGUIOpen(e):
 
 def stop():
     "关闭所有打开菜单的玩家"
-    closeGuiForAll("dcpt.")
+    closeGuiForAll("acq.")
 
 
 ps.command.registerCommand(main, "acquisition")
