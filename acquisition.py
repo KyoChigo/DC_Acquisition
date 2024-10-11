@@ -20,6 +20,7 @@ from util.anvilgui import anvilInputer # AnvilGUI
 from util.gui import initializeGUI, initializeItemStack, spawnSeparators, guiHolder, closeGuiForAll
 from net.wesjd.anvilgui import AnvilGUI # AnvilGUI Java Lib
 from org.bukkit.event.inventory import InventoryClickEvent
+from me.clip.placeholderapi import PlaceholderAPI # DC交通大学活跃脉冲接口用
 
 temp_itemToSell = {}
 temp_itemNum = {}
@@ -28,8 +29,8 @@ class calculate:
     def __init__(self):
         self.dictGoods = ["DIAMOND", "GOLD_INGOT", "IRON_INGOT", "COAL", "OAK_LOG", "BONE", "DIRT"]
         self.dictGoodsZh = ["钻石", "金锭", "铁锭", "煤炭", "橡木原木", "骨头", "泥土"]
-        self.dictPrice = [20.00, 6.00, 1.50, 0.85, 1.00, 1.00, 0.06]
-        self.dictEffic = [0.0004, 0.0004, 0.0004, 0.0003, 0.0002, 0.0002, 0.0016]
+        self.dictPrice = [8.20, 4.25, 1.75, 0.75, 0.80, 1.00, 0.06]
+        self.dictEffic = [0.000500, 0.000425, 0.000375, 0.000325, 0.000300, 0.000325, 0.000750]
         self.Config = ps.config.loadConfig('acquisition/parameterConfig.yml')
         self.ConfigDict = self.Config.getValues(True)
         self.todayIndex = Decimal(self.Config.get('todayIndexEnvi'))
@@ -154,11 +155,16 @@ class calculate:
 class NewCycleProcess:
     "新周期处理用"
     def __init__(self):
-        self.holiday = [date(2024, 4, 4) + timedelta(days=int(day+1)) for day in range(2)] \
+        self.holidayShort = [date(2024, 4, 4) + timedelta(days=int(day+1)) for day in range(2)] \
             + [date(2024, 5, 1) + timedelta(days=int(day+1)) for day in range(4)] \
             + [date(2024, 6, 8) + timedelta(days=int(day+1)) for day in range(2)] \
             + [date(2024, 9, 15) + timedelta(days=int(day+1)) for day in range(2)] \
-            + [date(2024, 10, 1) + timedelta(days=int(day+1)) for day in range(6)]
+            + [date(2024, 10, 1) + timedelta(days=int(day+1)) for day in range(6)]  # 中小假期
+        self.holidayLong = [date(2024, 1, 1) + timedelta(days=int(day+1)) for day in range(60)] \
+            + [date(2024, 7, 1) + timedelta(days=int(day+1)) for day in range(60)]  # 长假期
+        self.activityDetail = ps.config.loadConfig('acquisition/activityDetail.yml')
+        self.activityDetailDict = self.activityDetail.getValues(True)
+        self.historyDetail = ps.config.loadConfig('acquisition/historyDetail.yml')
 
     def calHistory(self, numberInit, t, g=1, tau=0.5):
         "新周期历史记录衰减计算函数；numberInit: 初始数量, g: 逆时间系数(越大则临界点附近变化越剧烈), tau: 临界点"
@@ -184,17 +190,69 @@ class NewCycleProcess:
         index -= beta * self.superGauss(day-1, 277, 2.4 ** 4) # 国庆小长假
 
         dayDate = date(2024, 1, 1) + timedelta(days=int(day-1))
-        if dayDate in self.holiday and dayDate not in [date(2024, 10, 1) + timedelta(days=int(day-1)) for day in range(6)]:
+        if dayDate in self.holidayShort and dayDate not in [date(2024, 10, 1) + timedelta(days=int(day-1)) for day in range(6)]:
             index *= 0.95   # 小假期物价下调
         elif dayDate.weekday() >= 5 and dayDate not in [date(2024, 10, 1) + timedelta(days=int(day-1)) for day in range(6)]:
             index *= 0.98   # 周末物价下调
         
         return index + self.randomAddictive(sigma=0.025, amp=1)
 
-    def residueRenew(self):
-        "新周期各玩家收购额度计算函数"
-        return Decimal(5000.00 + self.randomAddictive(sigma=0.035, amp=12000)).quantize(Decimal('0.00'), rounding=ROUND_DOWN)
+    def residueActivity(self, activity):
+        current_day = datetime.now()
+        if current_day in self.holidayLong: # 旺季
+            return Decimal(min(activity * 250, 10000)).quantize(Decimal('0.00'), rounding=ROUND_DOWN)
+        else:   # 淡季
+            return Decimal(min(activity * 300, 6000)).quantize(Decimal('0.00'), rounding=ROUND_DOWN)
 
+    def residueRenew(self, player):
+        "新周期各玩家收购额度计算函数"
+        historyDetailSection = self.historyDetail.getConfigurationSection(str(player.getName()))
+        historyDetailSectionDict = historyDetailSection.getValues(True)
+
+        current_day = datetime.now()
+        last_month = (current_day.replace(day=1) - timedelta(days=1)).strftime("%Y/%m")
+        this_month = current_day.strftime("%Y/%m")
+
+        residueBasic = Decimal(4000 + self.randomAddictive(sigma=0.035, amp=10000)).quantize(Decimal('0.00'), rounding=ROUND_DOWN)
+
+        activityPlayerNow = activity(player).getPlayerHot(this_month)
+        if activityPlayerNow != -1: # 若服务器中存在DC交通大学活跃脉冲记录
+            try:
+                activityPlayerLastCycle = historyDetailSectionDict[str(player.getName())]
+            except:
+                activityPlayerLastCycle = 0
+
+            if this_month != str(self.activityDetailDict["updateLatest"]):
+                activityPlayerLastMonth = activity(player).getPlayerHot(last_month)
+                activityPlayerTotal = activityPlayerNow + activityPlayerLastMonth
+                self.activityDetail.set("updateLatest", this_month)
+            
+            self.activityDetail.set(str(player.getName()), Decimal(activityPlayerNow).quantize(Decimal('0'), rounding=ROUND_DOWN))
+            activityPlayer = activityPlayerTotal - activityPlayerLastCycle
+            residue = residueBasic + self.residueActivity(activityPlayer)
+            self.activityDetail.save()
+
+        else:   # 本机测试模式
+            residue = residueBasic
+    
+        return residue
+
+
+class activity:
+    "DC交通大学活跃脉冲计算用"
+    def __init__(self, player):
+        self.player = player
+
+    def getPapi(self, placeholder):
+        return PlaceholderAPI.setPlaceholders(self.player, "%" + placeholder + "%")
+
+    def getPlayerHot(self, month):
+        "month格式：YYYY/mm"
+        try:
+            return int(self.getPapi(self.player, "javascript_geoloc_api,playerHotTotal,{player_name},"+month))
+        except:
+            return -1   # 本机测试模式
+        
 
 class GUIselect:
     def __init__(self, player, itemToSell):
@@ -367,7 +425,7 @@ def newCycle(sender, label, args):
                 tempList.append(NewCycleProcess().calHistory(section[i], t=i, g=0.7, tau=4))
             historyDetail.set(str(sectionName), tempList)
         elif str(sectionName)[len(playerName)+1:] == "RESIDUE": # 确定新周期余额
-            historyDetail.set(str(sectionName), NewCycleProcess().residueRenew())
+            historyDetail.set(str(sectionName), NewCycleProcess().residueRenew(player))
     
     historyDetail.save()
     Config.set("cycleNow", str(date.today()))
