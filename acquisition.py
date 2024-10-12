@@ -33,7 +33,7 @@ class calculate:
         self.dictEffic = [0.000500, 0.000425, 0.000375, 0.000325, 0.000300, 0.000325, 0.000750]
         self.Config = ps.config.loadConfig('acquisition/parameterConfig.yml')
         self.ConfigDict = self.Config.getValues(True)
-        self.todayIndex = Decimal(self.Config.get('todayIndexEnvi'))
+        self.todayIndex = Decimal(self.Config.get('todayIndexEnvi')).quantize(Decimal('0.000'))
         self.historyMoney = ps.config.loadConfig('acquisition/historyMoney.yml')
         self.historyMoneyDict = self.historyMoney.getValues(True)
         self.historyDetail = ps.config.loadConfig('acquisition/historyDetail.yml')
@@ -45,8 +45,8 @@ class calculate:
         overflow = False    # 判断是否超过本周期余额
         countSold = 0
         for i in range(count):
-            priceNow = priceInit * math.exp(-effic*(i+countHistory+1))  # 当前单价
-            priceNow = Decimal(priceNow).quantize(Decimal('0.00'), rounding=ROUND_DOWN)
+            priceNow = Decimal(priceInit * math.exp(-effic*(i+countHistory+1)))  # 当前单价
+            priceNow = Decimal(priceNow * self.todayIndex).quantize(Decimal('0.00'), rounding=ROUND_DOWN)
 
             if totalPrice + priceNow > residue:
                 overflow = True
@@ -55,7 +55,7 @@ class calculate:
             totalPrice += priceNow
             countSold += 1
         
-        totalPrice = Decimal(totalPrice * self.todayIndex).quantize(Decimal('0.00'), rounding=ROUND_DOWN)
+        totalPrice = Decimal(totalPrice).quantize(Decimal('0.00'), rounding=ROUND_DOWN)
 
         if countSold != 0:
             unitPrice = round(totalPrice / countSold, 2)
@@ -69,26 +69,31 @@ class calculate:
         totalPrice = Decimal('0.00')   # 总获益金额
         residue = Decimal(residue)  # 剩余收购额度
         overflow = False    # 判断是否超过本周期余额
-        countMax = max(maxQuantity, 64) # maxQuantity为背包内当前物品总数
-        priceQueryValue = []
-        priceQueryOverflow = []
-        priceQueryValueUnit = []
-        priceQueryOverflowNum = []
+        priceQueryValue = [-1, -1, -1, -1]
+        priceQueryOverflow = [False, False, False, False]
+        priceQueryValueUnit = [-1, -1, -1, -1]
+        priceQueryOverflowNum = [-1]
 
-        for i in range(countMax):
-            priceNow = priceInit * math.exp(-effic*(i+countHistory+1))  # 当前单价
-            priceNow = Decimal(priceNow).quantize(Decimal('0.00'), rounding=ROUND_DOWN)
+        for i in range(maxQuantity):
+            priceNow = Decimal(priceInit * math.exp(-effic*(i+countHistory+1)))  # 当前单价
+            priceNow = Decimal(priceNow * self.todayIndex).quantize(Decimal('0.00'), rounding=ROUND_DOWN)
             totalPrice += priceNow
 
             if overflow == False and totalPrice > residue:
                 overflow = True
                 priceQueryOverflowNum.append(i)
             
-            if i+1 in [1, 10, 64, countMax]:
-                priceQueryValue.append(totalPrice)
-                priceQueryOverflow.append(overflow)
-                priceQueryValueUnit.append(Decimal(totalPrice/(i+1)).quantize(Decimal('0.00'), rounding=ROUND_DOWN))
-        
+            itemNum = [1, 10, 64]
+            if i+1 in itemNum:
+                priceQueryValue[itemNum.index(i+1)] = totalPrice
+                priceQueryOverflow[itemNum.index(i+1)] = overflow
+                priceQueryValueUnit[itemNum.index(i+1)] = Decimal(totalPrice/(i+1)).quantize(Decimal('0.00'), rounding=ROUND_DOWN)
+
+            if i+1 == maxQuantity:
+                priceQueryValue[3] = totalPrice
+                priceQueryOverflow[3] = overflow
+                priceQueryValueUnit[3] = Decimal(totalPrice/(i+1)).quantize(Decimal('0.00'), rounding=ROUND_DOWN)
+
         return priceQueryValue + priceQueryOverflow + priceQueryValueUnit + priceQueryOverflowNum
 
     def sellOut(self, player, itemToSell):
@@ -100,12 +105,12 @@ class calculate:
         if historyDetailSection is not None:   # 检查玩家是否有收购记录
             tempDict = historyDetailSection.getValues(True)
             residue = Decimal(str(tempDict["RESIDUE"]))
-            if itemToSell in self.dictGoods:
+            if itemToSell in tempDict:
                 goodsHistory = sum(tempDict[itemToSell])
             else:
                 goodsHistory = 0
         else:
-            residue = NewCycleProcess().residueRenew()
+            residue = NewCycleProcess().residueRenew(player)
             tempDict = {"RESIDUE": residue}
             goodsHistory = 0
             
@@ -198,7 +203,7 @@ class NewCycleProcess:
         "收购额度中活跃额度的计算函数"
         current_day = datetime.now()
         if current_day in self.holidayLong: # 旺季
-            return Decimal(min(activity * 250, 10000)).quantize(Decimal('0.00'), rounding=ROUND_DOWN)
+            return Decimal(min(activity * 125, 5000)).quantize(Decimal('0.00'), rounding=ROUND_DOWN)
         else:   # 淡季
             return Decimal(min(activity * 300, 6000)).quantize(Decimal('0.00'), rounding=ROUND_DOWN)
 
@@ -211,7 +216,10 @@ class NewCycleProcess:
         last_month = (current_day.replace(day=1) - timedelta(days=1)).strftime("%Y/%m")
         this_month = current_day.strftime("%Y/%m")
 
-        residueBasic = Decimal(4000 + self.randomAddictive(sigma=0.035, amp=10000)).quantize(Decimal('0.00'), rounding=ROUND_DOWN) # 基础额度
+        if current_day in self.holidayLong: # 旺季
+            residueBasic = Decimal(3000 + self.randomAddictive(sigma=0.065, amp=16000)).quantize(Decimal('0.00'), rounding=ROUND_DOWN) # 基础额度
+        else:   # 淡季
+            residueBasic = Decimal(4000 + self.randomAddictive(sigma=0.040, amp=10000)).quantize(Decimal('0.00'), rounding=ROUND_DOWN) # 基础额度
 
         activityPlayerNow = activity(player).getPlayerHot(this_month)
         if activityPlayerNow != -1: # 若服务器中存在DC交通大学活跃脉冲记录
@@ -259,6 +267,8 @@ class GUIselect:
         self.historyDetailSection = self.historyDetail.getConfigurationSection(str(self.player.getName()))
         self.historyMoney = ps.config.loadConfig('acquisition/historyMoney.yml')
         self.historyMoneyDict = self.historyMoney.getValues(True)
+        self.Config = ps.config.loadConfig('acquisition/parameterConfig.yml')
+        self.todayIndex = Decimal(self.Config.get('todayIndexEnvi')).quantize(Decimal('0.000'))
 
         self.itemToSell = itemToSell
         self.itemToSellNumber = 0  # 收购物品的总数
@@ -294,19 +304,26 @@ class GUIselect:
         priceQueryList = calculate().priceQuery(countHistory=goodsHistory, priceInit=priceInit, effic=goodsEffic, residue=residue, maxQuantity=self.itemToSellNumber)
 
         selectGUI = initializeGUI("acq.select", 9, u"DC收购窗口：" + self.itemToSellName)
-        selectGUI.setItem(0, initializeItemStack(Material.valueOf(self.itemToSell), u"§a当前收购物品：§b" + self.itemToSellName))
+        selectGUI.setItem(0, initializeItemStack(Material.valueOf(self.itemToSell), u"§a当前收购物品：§b" + self.itemToSellName,
+                                                  u"§a今日价格环境指数：§b" + str(self.todayIndex), u"§a当前剩余收购额度：§b" + str(residue) + u" DC币"))
         selectGUI.setItem(8, initializeItemStack(Material.RED_WOOL, u"§c取消收购"))
-        selectGUI.setItem(2, initializeItemStack(Material.GOLD_NUGGET, u"§a出售1个", "", u"§f预计总价：" + str(priceQueryList[0]), 
-                                                  u"§f对应单价：" + str(priceQueryList[8]),
+        selectGUI.setItem(2, initializeItemStack(Material.GOLD_NUGGET, u"§a出售1个", "", u"§f预计总价：" + str(priceQueryList[0]) + u" DC币", 
+                                                  u"§f对应单价：" + str(priceQueryList[8]) + u" DC币",
                                                   u"§c超出剩余收购额度，仅能售出§e" + str(priceQueryList[12]) + u"个" if priceQueryList[4] else u"§a可出售"))
-        selectGUI.setItem(3, initializeItemStack(Material.GOLD_INGOT, u"§a出售10个", "", u"§f预计总价：" + str(priceQueryList[1]),
-                                                  u"§f对应单价：" + str(priceQueryList[9]),
-                                                  u"§c超出剩余收购额度，仅能售出§e" + str(priceQueryList[12]) + u"个" if priceQueryList[5] else u"§a可出售"))
-        selectGUI.setItem(4, initializeItemStack(Material.GOLD_BLOCK, u"§a出售64个", "", u"§f预计总价：" + str(priceQueryList[2]),
-                                                  u"§f对应单价：" + str(priceQueryList[10]),
-                                                  u"§c超出剩余收购额度，仅能售出§e" + str(priceQueryList[12]) + u"个" if priceQueryList[6] else u"§a可出售"))
+        if self.itemToSellNumber >= 10:
+            selectGUI.setItem(3, initializeItemStack(Material.GOLD_INGOT, u"§a出售10个", "", u"§f预计总价：" + str(priceQueryList[1]) + u" DC币",
+                                                    u"§f对应单价：" + str(priceQueryList[9]) + u" DC币",
+                                                    u"§c超出剩余收购额度，仅能售出§e" + str(priceQueryList[12]) + u"个" if priceQueryList[5] else u"§a可出售"))
+        else:
+            spawnSeparators(selectGUI, 3, 3) # 挡板
+        if self.itemToSellNumber >= 64:
+            selectGUI.setItem(4, initializeItemStack(Material.GOLD_BLOCK, u"§a出售64个", "", u"§f预计总价：" + str(priceQueryList[2]) + u" DC币",
+                                                    u"§f对应单价：" + str(priceQueryList[10]) + u" DC币",
+                                                    u"§c超出剩余收购额度，仅能售出§e" + str(priceQueryList[12]) + u"个" if priceQueryList[6] else u"§a可出售"))
+        else:
+            spawnSeparators(selectGUI, 4, 4) # 挡板
         selectGUI.setItem(5, initializeItemStack(Material.BARREL, u"§a出售背包内全部（§b" + str(self.itemToSellNumber) + u"个§a）",
-                                                  "", u"§f预计总价：" + str(priceQueryList[3]), u"§f对应单价：" + str(priceQueryList[11]),
+                                                  "", u"§f预计总价：" + str(priceQueryList[3]) + u" DC币", u"§f对应单价：" + str(priceQueryList[11]) + u" DC币",
                                                   u"§c超出剩余收购额度，仅能售出§e" + str(priceQueryList[12]) + u"个" if priceQueryList[7] else u"§a可出售"))
         selectGUI.setItem(6, initializeItemStack(Material.LEGACY_BOOK_AND_QUILL, u"§a自定义出售", "", u"§e注意：无法预览价格"))
         spawnSeparators(selectGUI, 1, 1) # 挡板
@@ -316,9 +333,20 @@ class GUIselect:
 
     def handler(self, e):
         clickInt = e.getSlot()
-        if clickInt in [2, 3, 4, 5]:
-            itemNum = [1, 10, 64, self.itemToSellNumber]
-            temp_itemNum[self.player.getName()] = itemNum[clickInt - 2]
+        if clickInt == 2:
+            temp_itemNum[self.player.getName()] = 1
+            calculate().sellOut(player=self.player, itemToSell=self.itemToSell)
+            self.player.closeInventory()
+        elif clickInt == 3 and self.itemToSellNumber >= 10:
+            temp_itemNum[self.player.getName()] = 10
+            calculate().sellOut(player=self.player, itemToSell=self.itemToSell)
+            self.player.closeInventory()
+        elif clickInt == 4 and self.itemToSellNumber >= 64:
+            temp_itemNum[self.player.getName()] = 64
+            calculate().sellOut(player=self.player, itemToSell=self.itemToSell)
+            self.player.closeInventory()
+        elif clickInt == 5:
+            temp_itemNum[self.player.getName()] = self.itemToSellNumber
             calculate().sellOut(player=self.player, itemToSell=self.itemToSell)
             self.player.closeInventory()
         elif clickInt == 6:
