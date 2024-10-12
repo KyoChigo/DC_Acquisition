@@ -275,8 +275,9 @@ class GUIselect:
         # 遍历玩家的背包
         for item in player.getInventory().getContents():
             if item is not None and item.getType().toString() == self.itemToSell:
-                self.itemToSellType = item.getType()
-                self.itemToSellNumber += item.getAmount()
+                if item.hasItemMeta() == False:
+                    self.itemToSellType = item.getType()
+                    self.itemToSellNumber += item.getAmount()
         self.itemID = calculate().dictGoods.index(self.itemToSell)
         self.itemToSellName = calculate().dictGoodsZh[self.itemID].decode('utf-8')
 
