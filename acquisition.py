@@ -441,7 +441,7 @@ def newCycle(sender, label, args):
                 tempList.append(NewCycleProcess().calHistory(section[i], t=i, g=0.7, tau=4))
             historyDetail.set(str(sectionName), tempList)
         elif str(sectionName)[len(playerName)+1:] == "RESIDUE": # 确定新周期余额
-            historyDetail.set(str(sectionName), NewCycleProcess().residueRenew(player))
+            historyDetail.set(str(sectionName), NewCycleProcess().residueRenew(Bukkit.getServer().getOfflinePlayer(playerName)))
     
     historyDetail.save()
     Config.set("cycleNow", str(date.today()))
@@ -516,6 +516,61 @@ def onGUIOpen(e):
         if invName.startswith("acq."):
             itemToSell = temp_itemToSell.get(player.getName())
             GUIselect(player, itemToSell).handler(e)
+
+
+def start():
+    "开服执行函数"
+    def indexEnviUpdateStart():
+        "价格环境指数更新函数（开服时执行）"
+        Config = ps.config.loadConfig('acquisition/parameterConfig.yml')
+        today = Config.get('today')
+
+        if today != date.today().strftime("%Y-%m-%d"):
+            yesterdayIndex = Decimal(Config.get('todayIndexEnvi')).quantize(Decimal('0.000'))
+            todayIndex = Decimal(NewCycleProcess().indexEnvi(int(datetime.strptime(today, '%Y-%m-%d').strftime('%j')))).quantize(Decimal('0.000'), rounding=ROUND_DOWN)
+            deltaIndex = todayIndex - yesterdayIndex
+
+            Config.set('todayIndexEnvi', todayIndex)
+            Config.set('today', str(date.today()))
+            Config.save()
+
+        return True
+    
+    def newCycleStart():
+        "新周期执行函数（开服时执行）"
+        historyDetail = ps.config.loadConfig('acquisition/historyDetail.yml')
+        historyDetailDict = historyDetail.getValues(True)
+        historyMoney = ps.config.loadConfig('acquisition/historyMoney.yml')
+        historyMoneyDict = historyMoney.getValues(True)
+        Config = ps.config.loadConfig('acquisition/parameterConfig.yml')
+
+        for sectionName in historyDetailDict:
+            if "." not in sectionName:
+                playerName = sectionName
+                playerConfig = historyDetail.getConfigurationSection(str(sectionName)).getValues(True)
+            elif str(sectionName)[len(playerName)+1:] in calculate().dictGoods:
+                goodsName = str(sectionName)[len(playerName)+1:]
+                section = playerConfig[goodsName]
+                tempList = [0]
+                for i in range(23):
+                    tempList.append(NewCycleProcess().calHistory(section[i], t=i, g=0.7, tau=4))
+                historyDetail.set(str(sectionName), tempList)
+            elif str(sectionName)[len(playerName)+1:] == "RESIDUE": # 确定新周期余额
+                historyDetail.set(str(sectionName), NewCycleProcess().residueRenew(Bukkit.getServer().getOfflinePlayer(playerName)))
+        
+        historyDetail.save()
+        Config.set("cycleNow", str(date.today()))
+        Config.save()
+        if str(date.today()) not in historyMoneyDict.keys():
+            historyMoney.createSection(str(date.today()))
+        historyMoney.save()
+
+        return True
+
+    indexEnviUpdateStart()
+    current_day = datetime.now()
+    if current_day.weekday() == 0:  # 每周一进入新周期
+        newCycleStart()
 
 
 def stop():
