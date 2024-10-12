@@ -228,9 +228,10 @@ class NewCycleProcess:
             except:
                 activityPlayerLastCycle = 0
 
-            if this_month != str(self.activityDetailDict["updateLatest"]):
+            activityPlayerTotal = activityPlayerNow
+            if this_month != str(self.activityDetailDict["updateLatest"]):  # 跨月处理
                 activityPlayerLastMonth = activity(player).getPlayerHot(last_month)
-                activityPlayerTotal = activityPlayerNow + activityPlayerLastMonth
+                activityPlayerTotal += activityPlayerLastMonth
                 self.activityDetail.set("updateLatest", this_month)
             
             self.activityDetail.set(str(player.getName()), Decimal(activityPlayerNow).quantize(Decimal('0'), rounding=ROUND_DOWN))
@@ -253,7 +254,7 @@ class activity:
         return PlaceholderAPI.setPlaceholders(self.player, "%" + placeholder + "%")
 
     def getPlayerHot(self, month):
-        "month格式：YYYY/mm"
+        "month格式：YYYY/MM"
         try:
             return int(self.getPapi(self.player, "javascript_geoloc_api,playerHotTotal,{player_name},"+month))
         except:
@@ -297,7 +298,7 @@ class GUIselect:
                 goodsHistory = 0
         else:
             goodsHistory = 0
-            residue = NewCycleProcess().residueRenew()
+            residue = NewCycleProcess().residueRenew(self.player)
         
         priceInit = calculate().dictPrice[self.itemID]
         goodsEffic = calculate().dictEffic[self.itemID]
@@ -538,32 +539,35 @@ def start():
     
     def newCycleStart():
         "新周期执行函数（开服时执行）"
-        historyDetail = ps.config.loadConfig('acquisition/historyDetail.yml')
-        historyDetailDict = historyDetail.getValues(True)
-        historyMoney = ps.config.loadConfig('acquisition/historyMoney.yml')
-        historyMoneyDict = historyMoney.getValues(True)
         Config = ps.config.loadConfig('acquisition/parameterConfig.yml')
+        cycleNow = Config.get('cycleNow')
 
-        for sectionName in historyDetailDict:
-            if "." not in sectionName:
-                playerName = sectionName
-                playerConfig = historyDetail.getConfigurationSection(str(sectionName)).getValues(True)
-            elif str(sectionName)[len(playerName)+1:] in calculate().dictGoods:
-                goodsName = str(sectionName)[len(playerName)+1:]
-                section = playerConfig[goodsName]
-                tempList = [0]
-                for i in range(23):
-                    tempList.append(NewCycleProcess().calHistory(section[i], t=i, g=0.7, tau=4))
-                historyDetail.set(str(sectionName), tempList)
-            elif str(sectionName)[len(playerName)+1:] == "RESIDUE": # 确定新周期余额
-                historyDetail.set(str(sectionName), NewCycleProcess().residueRenew(Bukkit.getServer().getOfflinePlayer(playerName)))
+        if cycleNow != date.today().strftime("%Y-%m-%d"):
+            historyDetail = ps.config.loadConfig('acquisition/historyDetail.yml')
+            historyDetailDict = historyDetail.getValues(True)
+            historyMoney = ps.config.loadConfig('acquisition/historyMoney.yml')
+            historyMoneyDict = historyMoney.getValues(True)
+
+            for sectionName in historyDetailDict:
+                if "." not in sectionName:
+                    playerName = sectionName
+                    playerConfig = historyDetail.getConfigurationSection(str(sectionName)).getValues(True)
+                elif str(sectionName)[len(playerName)+1:] in calculate().dictGoods:
+                    goodsName = str(sectionName)[len(playerName)+1:]
+                    section = playerConfig[goodsName]
+                    tempList = [0]
+                    for i in range(23):
+                        tempList.append(NewCycleProcess().calHistory(section[i], t=i, g=0.7, tau=4))
+                    historyDetail.set(str(sectionName), tempList)
+                elif str(sectionName)[len(playerName)+1:] == "RESIDUE": # 确定新周期余额
+                    historyDetail.set(str(sectionName), NewCycleProcess().residueRenew(Bukkit.getServer().getOfflinePlayer(playerName)))
         
-        historyDetail.save()
-        Config.set("cycleNow", str(date.today()))
-        Config.save()
-        if str(date.today()) not in historyMoneyDict.keys():
-            historyMoney.createSection(str(date.today()))
-        historyMoney.save()
+            historyDetail.save()
+            Config.set("cycleNow", str(date.today()))
+            Config.save()
+            if str(date.today()) not in historyMoneyDict.keys():
+                historyMoney.createSection(str(date.today()))
+            historyMoney.save()
 
         return True
 
