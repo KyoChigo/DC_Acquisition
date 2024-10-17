@@ -519,6 +519,27 @@ def onGUIOpen(e):
             GUIselect(player, itemToSell).handler(e)
 
 
+def residueChange(sender, label, args):
+    "前台更改收购余额函数"
+    changer = sender.getPlayer()
+    player = Bukkit.getServer().getOfflinePlayer(str(args[0]))
+    historyDetail = ps.config.loadConfig('acquisition/historyDetail.yml')
+    historyDetailSection = historyDetail.getConfigurationSection(str(player.getName()))
+    tempDict = historyDetailSection.getValues(True)
+    residue = Decimal(float(tempDict["RESIDUE"]) + float(args[1])).quantize(Decimal('0.00'))
+    historyDetail.set(str(args[0])+".RESIDUE", residue)
+    historyDetail.save()
+
+    if float(args[1]) >= 0:
+        changer.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&a 已为&b" + str(args[0]) + u"&a增加&b" + str(Decimal(args[1]).quantize(Decimal('0.00')))
+                                                                  + u" DC币&a收购额度，目前收购额度为&b" + str(residue) + u" DC币&a！"))
+    else:
+        changer.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&a 已为&b" + str(args[0]) + u"&a减少&b" + str(Decimal(args[1]).quantize(Decimal('0.00')))[1:]
+                                                                  + u" DC币&a收购额度，目前收购额度为&b" + str(residue) + u" DC币&a！"))
+
+    return True
+
+
 def start():
     "开服执行函数"
     def indexEnviUpdateStart():
@@ -527,9 +548,7 @@ def start():
         today = Config.get('today')
 
         if today != date.today().strftime("%Y-%m-%d"):
-            yesterdayIndex = Decimal(Config.get('todayIndexEnvi')).quantize(Decimal('0.000'))
             todayIndex = Decimal(NewCycleProcess().indexEnvi(int(datetime.strptime(today, '%Y-%m-%d').strftime('%j')))).quantize(Decimal('0.000'), rounding=ROUND_DOWN)
-            deltaIndex = todayIndex - yesterdayIndex
 
             Config.set('todayIndexEnvi', todayIndex)
             Config.set('today', str(date.today()))
@@ -587,4 +606,5 @@ ps.command.registerCommand(newCycle, "newcycle")
 ps.command.registerCommand(indexEnviUpdate, "newday")
 ps.command.registerCommand(indexEnviQuery, "acqindexenvi")
 ps.command.registerCommand(residueQuery, "acqresidue")
+ps.command.registerCommand(residueChange, "acqresiduechange")
 ps.listener.registerListener(onGUIOpen, InventoryClickEvent, True)
