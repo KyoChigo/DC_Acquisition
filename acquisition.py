@@ -422,66 +422,72 @@ def main(sender, label, args):
 
 
 def newCycle(sender, label, args):
-    "新周期执行函数"
+    "新周期执行函数（管理员专用）"
     player = sender.getPlayer()  # 获取玩家对象
-    historyDetail = ps.config.loadConfig('acquisition/historyDetail.yml')
-    historyDetailDict = historyDetail.getValues(True)
-    historyMoney = ps.config.loadConfig('acquisition/historyMoney.yml')
-    historyMoneyDict = historyMoney.getValues(True)
-    Config = ps.config.loadConfig('acquisition/parameterConfig.yml')
+    if player.hasPermission("acq.admin"):
+        historyDetail = ps.config.loadConfig('acquisition/historyDetail.yml')
+        historyDetailDict = historyDetail.getValues(True)
+        historyMoney = ps.config.loadConfig('acquisition/historyMoney.yml')
+        historyMoneyDict = historyMoney.getValues(True)
+        Config = ps.config.loadConfig('acquisition/parameterConfig.yml')
 
-    for sectionName in historyDetailDict:
-        if "." not in sectionName:
-            playerName = sectionName
-            playerConfig = historyDetail.getConfigurationSection(str(sectionName)).getValues(True)
-        elif str(sectionName)[len(playerName)+1:] in calculate().dictGoods:
-            goodsName = str(sectionName)[len(playerName)+1:]
-            section = playerConfig[goodsName]
-            tempList = [0]
-            for i in range(23):
-                tempList.append(NewCycleProcess().calHistory(section[i], t=i, g=0.7, tau=4))
-            historyDetail.set(str(sectionName), tempList)
-        elif str(sectionName)[len(playerName)+1:] == "RESIDUE": # 确定新周期余额
-            historyDetail.set(str(sectionName), NewCycleProcess().residueRenew(Bukkit.getServer().getOfflinePlayer(playerName)))
-    
-    historyDetail.save()
-    Config.set("cycleNow", str(date.today()))
-    Config.save()
-    if str(date.today()) not in historyMoneyDict.keys():
-        historyMoney.createSection(str(date.today()))
-    historyMoney.save()
-    player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&a 系统已进入新周期！"))
+        for sectionName in historyDetailDict:
+            if "." not in sectionName:
+                playerName = sectionName
+                playerConfig = historyDetail.getConfigurationSection(str(sectionName)).getValues(True)
+            elif str(sectionName)[len(playerName)+1:] in calculate().dictGoods:
+                goodsName = str(sectionName)[len(playerName)+1:]
+                section = playerConfig[goodsName]
+                tempList = [0]
+                for i in range(23):
+                    tempList.append(NewCycleProcess().calHistory(section[i], t=i, g=0.7, tau=4))
+                historyDetail.set(str(sectionName), tempList)
+            elif str(sectionName)[len(playerName)+1:] == "RESIDUE": # 确定新周期余额
+                historyDetail.set(str(sectionName), NewCycleProcess().residueRenew(Bukkit.getServer().getOfflinePlayer(playerName)))
+        
+        historyDetail.save()
+        Config.set("cycleNow", str(date.today()))
+        Config.save()
+        if str(date.today()) not in historyMoneyDict.keys():
+            historyMoney.createSection(str(date.today()))
+        historyMoney.save()
+        player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&a 系统已进入新周期！"))
+    else:
+        player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&c 您没有管理员权限！"))
 
     return True
 
 
 def indexEnviUpdate(sender, label, args):
-    "价格环境指数更新函数"
+    "价格环境指数更新函数（管理员专用）"
     player = sender.getPlayer()
-    Config = ps.config.loadConfig('acquisition/parameterConfig.yml')
-    today = Config.get('today')
-    force = "FALSE"
-    if len(args) == 1:
-        force = str(args[0])
+    if player.hasPermission("acq.admin"):
+        Config = ps.config.loadConfig('acquisition/parameterConfig.yml')
+        today = Config.get('today')
+        force = "FALSE"
+        if len(args) == 1:
+            force = str(args[0])
 
-    if today != date.today().strftime("%Y-%m-%d") or force == "TRUE":
-        yesterdayIndex = Decimal(Config.get('todayIndexEnvi')).quantize(Decimal('0.000'))
-        todayIndex = Decimal(NewCycleProcess().indexEnvi(int(datetime.strptime(today, '%Y-%m-%d').strftime('%j')))).quantize(Decimal('0.000'), rounding=ROUND_DOWN)
-        deltaIndex = todayIndex - yesterdayIndex
+        if today != date.today().strftime("%Y-%m-%d") or force == "TRUE":
+            yesterdayIndex = Decimal(Config.get('todayIndexEnvi')).quantize(Decimal('0.000'))
+            todayIndex = Decimal(NewCycleProcess().indexEnvi(int(datetime.strptime(today, '%Y-%m-%d').strftime('%j')))).quantize(Decimal('0.000'), rounding=ROUND_DOWN)
+            deltaIndex = todayIndex - yesterdayIndex
 
-        Config.set('todayIndexEnvi', todayIndex)
-        Config.set('today', str(date.today()))
-        Config.save()
+            Config.set('todayIndexEnvi', todayIndex)
+            Config.set('today', str(date.today()))
+            Config.save()
 
-        player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&a 新的一天，新的开始！今日价格环境指数为&b" + str(todayIndex) + u"&a！"))
-        if deltaIndex > Decimal('0.000'):
-            player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&a 价格环境指数较昨日相比&b增加" + str(deltaIndex) + u"&a！"))
-        elif deltaIndex < Decimal('0.000'):
-            player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&a 价格环境指数较昨日相比&c减少" + str(deltaIndex)[1:] + u"&a！"))
+            player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&a 新的一天，新的开始！今日价格环境指数为&b" + str(todayIndex) + u"&a！"))
+            if deltaIndex > Decimal('0.000'):
+                player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&a 价格环境指数较昨日相比&b增加" + str(deltaIndex) + u"&a！"))
+            elif deltaIndex < Decimal('0.000'):
+                player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&a 价格环境指数较昨日相比&c减少" + str(deltaIndex)[1:] + u"&a！"))
+            else:
+                player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&a 价格环境指数较昨日未发生变化！"))
         else:
-            player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&a 价格环境指数较昨日未发生变化！"))
+            player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&a 今日价格环境指数已经更新！当前指数为&b" + str(Decimal(Config.get('todayIndexEnvi')).quantize(Decimal('0.000'))) + u"&a！"))
     else:
-        player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&a 今日价格环境指数已经更新！当前指数为&b" + str(Decimal(Config.get('todayIndexEnvi')).quantize(Decimal('0.000'))) + u"&a！"))
+        player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&c 您没有管理员权限！"))
     
     return True
 
@@ -520,22 +526,28 @@ def onGUIOpen(e):
 
 
 def residueChange(sender, label, args):
-    "前台更改收购余额函数"
+    "前台更改收购余额函数（管理员专用）"
     changer = sender.getPlayer()
-    player = Bukkit.getServer().getOfflinePlayer(str(args[0]))
-    historyDetail = ps.config.loadConfig('acquisition/historyDetail.yml')
-    historyDetailSection = historyDetail.getConfigurationSection(str(player.getName()))
-    tempDict = historyDetailSection.getValues(True)
-    residue = Decimal(float(tempDict["RESIDUE"]) + float(args[1])).quantize(Decimal('0.00'))
-    historyDetail.set(str(args[0])+".RESIDUE", residue)
-    historyDetail.save()
+    if changer.hasPermission("acq.admin"):
+        if len(args) == 2:
+            player = Bukkit.getServer().getOfflinePlayer(str(args[0]))
+            historyDetail = ps.config.loadConfig('acquisition/historyDetail.yml')
+            historyDetailSection = historyDetail.getConfigurationSection(str(player.getName()))
+            tempDict = historyDetailSection.getValues(True)
+            residue = Decimal(float(tempDict["RESIDUE"]) + float(args[1])).quantize(Decimal('0.00'))
+            historyDetail.set(str(args[0])+".RESIDUE", residue)
+            historyDetail.save()
 
-    if float(args[1]) >= 0:
-        changer.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&a 已为&b" + str(args[0]) + u"&a增加&b" + str(Decimal(args[1]).quantize(Decimal('0.00')))
-                                                                  + u" DC币&a收购额度，目前收购额度为&b" + str(residue) + u" DC币&a！"))
+            if float(args[1]) >= 0:
+                changer.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&a 已为&b" + str(args[0]) + u"&a增加&b" + str(Decimal(args[1]).quantize(Decimal('0.00')))
+                                                                        + u" DC币&a收购额度，目前收购额度为&b" + str(residue) + u" DC币&a！"))
+            else:
+                changer.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&a 已为&b" + str(args[0]) + u"&a减少&b" + str(Decimal(args[1]).quantize(Decimal('0.00')))[1:]
+                                                                        + u" DC币&a收购额度，目前收购额度为&b" + str(residue) + u" DC币&a！"))
+        else:
+            changer.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&c 参数输入有误！"))
     else:
-        changer.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&a 已为&b" + str(args[0]) + u"&a减少&b" + str(Decimal(args[1]).quantize(Decimal('0.00')))[1:]
-                                                                  + u" DC币&a收购额度，目前收购额度为&b" + str(residue) + u" DC币&a！"))
+        changer.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&c 您没有管理员权限！"))
 
     return True
 
@@ -601,10 +613,10 @@ def stop():
     closeGuiForAll("acq.")
 
 
-ps.command.registerCommand(main, "acquisition")
-ps.command.registerCommand(newCycle, "newcycle")
-ps.command.registerCommand(indexEnviUpdate, "newday")
-ps.command.registerCommand(indexEnviQuery, "acqindexenvi")
-ps.command.registerCommand(residueQuery, "acqresidue")
-ps.command.registerCommand(residueChange, "acqresiduechange")
+ps.command.registerCommand(main, "acq.sellout")
+ps.command.registerCommand(newCycle, "acq.newcycle")             # 仅限管理员
+ps.command.registerCommand(indexEnviUpdate, "acq.newday")        # 仅限管理员
+ps.command.registerCommand(indexEnviQuery, "acq.indexenvi")
+ps.command.registerCommand(residueQuery, "acq.residue")
+ps.command.registerCommand(residueChange, "acq.residuechange")   # 仅限管理员
 ps.listener.registerListener(onGUIOpen, InventoryClickEvent, True)
