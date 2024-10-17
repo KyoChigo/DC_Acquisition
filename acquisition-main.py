@@ -206,9 +206,6 @@ class NewCycleProcess:
 
     def residueRenew(self, player):
         "新周期各玩家收购额度计算函数"
-        historyDetailSection = self.historyDetail.getConfigurationSection(str(player.getName()))
-        historyDetailSectionDict = historyDetailSection.getValues(True)
-
         current_day = datetime.now()
         last_month = (current_day.replace(day=1) - timedelta(days=1)).strftime("%Y/%m")
         this_month = current_day.strftime("%Y/%m")
@@ -221,7 +218,7 @@ class NewCycleProcess:
         activityPlayerNow = activity(player).getPlayerHot(this_month)
         if activityPlayerNow != -1: # 若服务器中存在DC交通大学活跃脉冲记录
             try:
-                activityPlayerLastCycle = historyDetailSectionDict[str(player.getName())]
+                activityPlayerLastCycle = self.activityDetailDict[str(player.getName())]
             except:
                 activityPlayerLastCycle = 0
 
@@ -296,6 +293,11 @@ class GUIselect:
         else:
             goodsHistory = 0
             residue = NewCycleProcess().residueRenew(self.player)
+            self.historyDetail.set(self.player.getName()+".RESIDUE", residue)
+            self.historyDetail.save()
+            residueHistory = ps.config.loadConfig('acquisition/researchResidue.yml')
+            residueHistory.set(self.player.getName()+"."+date.today().strftime("%Y-%m-%d"), residue)
+            residueHistory.save()
         
         priceInit = dictPrice[self.itemID]
         goodsEffic = dictEffic[self.itemID]
@@ -428,6 +430,7 @@ def newCycle(sender, label, args):
         historyMoney = ps.config.loadConfig('acquisition/historyMoney.yml')
         historyMoneyDict = historyMoney.getValues(True)
         Config = ps.config.loadConfig('acquisition/parameterConfig.yml')
+        residueHistory = ps.config.loadConfig('acquisition/researchResidue.yml')
 
         for sectionName in historyDetailDict:
             if "." not in sectionName:
@@ -441,7 +444,9 @@ def newCycle(sender, label, args):
                     tempList.append(NewCycleProcess().calHistory(section[i], t=i, g=0.7, tau=4))
                 historyDetail.set(str(sectionName), tempList)
             elif str(sectionName)[len(playerName)+1:] == "RESIDUE": # 确定新周期余额
-                historyDetail.set(str(sectionName), NewCycleProcess().residueRenew(Bukkit.getServer().getOfflinePlayer(playerName)))
+                residueNew = NewCycleProcess().residueRenew(Bukkit.getServer().getOfflinePlayer(playerName))
+                historyDetail.set(str(sectionName), residueNew)
+                residueHistory.set(str(sectionName)+"."+date.today().strftime("%Y-%m-%d"), residueNew)
         
         historyDetail.save()
         Config.set("cycleNow", str(date.today()))
@@ -461,6 +466,7 @@ def indexEnviUpdate(sender, label, args):
     player = sender.getPlayer()
     if player.hasPermission("acq.admin"):
         Config = ps.config.loadConfig('acquisition/parameterConfig.yml')
+        indexEnviHistory = ps.config.loadConfig('acquisition/researchIndexEnvi.yml')
         today = Config.get('today')
         force = "FALSE"
         if args != None:
@@ -474,6 +480,8 @@ def indexEnviUpdate(sender, label, args):
             Config.set('todayIndexEnvi', todayIndex)
             Config.set('today', str(date.today()))
             Config.save()
+            indexEnviHistory.set(str(date.today()), todayIndex)
+            indexEnviHistory.save()
 
             player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&a 新的一天，新的开始！今日价格环境指数为&b" + str(todayIndex) + u"&a！"))
             if deltaIndex > Decimal('0.000'):
@@ -504,10 +512,18 @@ def residueQuery(sender, label, args):
     player = sender.getPlayer()
     historyDetail = ps.config.loadConfig('acquisition/historyDetail.yml')
     historyDetailSection = historyDetail.getConfigurationSection(str(player.getName()))
-    tempDict = historyDetailSection.getValues(True)
-    residue = Decimal(str(tempDict["RESIDUE"]))
+    if historyDetailSection is not None:
+        tempDict = historyDetailSection.getValues(True)
+        residue = Decimal(str(tempDict["RESIDUE"]))
+    else:
+        residue = NewCycleProcess().residueRenew(player)
+        historyDetail.set(player.getName()+".RESIDUE", residue)
+        historyDetail.save()
+        residueHistory = ps.config.loadConfig('acquisition/researchResidue.yml')
+        residueHistory.set(player.getName()+"."+date.today().strftime("%Y-%m-%d"), residue)
+        residueHistory.save()
     player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&a 您本周期剩余收购额度为&b" + str(residue.quantize(Decimal('0.00'))) + u" DC币&a！"))
-    
+
     return True
 
 
@@ -527,23 +543,24 @@ def residueChange(sender, label, args):
     "前台更改收购余额函数（管理员专用）"
     changer = sender.getPlayer()
     if changer.hasPermission("acq.admin"):
-        if len(args) == 2:
-            player = Bukkit.getServer().getOfflinePlayer(str(args[0]))
-            historyDetail = ps.config.loadConfig('acquisition/historyDetail.yml')
-            historyDetailSection = historyDetail.getConfigurationSection(str(player.getName()))
-            tempDict = historyDetailSection.getValues(True)
-            residue = Decimal(float(tempDict["RESIDUE"]) + float(args[1])).quantize(Decimal('0.00'))
-            historyDetail.set(str(args[0])+".RESIDUE", residue)
-            historyDetail.save()
+        player = Bukkit.getServer().getOfflinePlayer(str(args[0]))
+        residueHistory = ps.config.loadConfig('acquisition/researchResidue.yml')
+        historyDetail = ps.config.loadConfig('acquisition/historyDetail.yml')
+        historyDetailSection = historyDetail.getConfigurationSection(str(player.getName()))
+        tempDict = historyDetailSection.getValues(True)
+        residue = Decimal(float(tempDict["RESIDUE"]) + float(args[1])).quantize(Decimal('0.00'))
 
-            if float(args[1]) >= 0:
-                changer.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&a 已为&b" + str(args[0]) + u"&a增加&b" + str(Decimal(args[1]).quantize(Decimal('0.00')))
-                                                                        + u" DC币&a收购额度，目前收购额度为&b" + str(residue) + u" DC币&a！"))
-            else:
-                changer.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&a 已为&b" + str(args[0]) + u"&a减少&b" + str(Decimal(args[1]).quantize(Decimal('0.00')))[1:]
-                                                                        + u" DC币&a收购额度，目前收购额度为&b" + str(residue) + u" DC币&a！"))
+        historyDetail.set(str(args[0])+".RESIDUE", residue)
+        historyDetail.save()
+        residueHistory.set(str(args[0])+"."+date.today().strftime("%Y-%m-%d"), residue)
+        residueHistory.save()
+
+        if float(args[1]) >= 0:
+            changer.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&a 已为&b" + str(args[0]) + u"&a增加&b" + str(Decimal(args[1]).quantize(Decimal('0.00')))
+                                                                    + u" DC币&a收购额度，目前收购额度为&b" + str(residue) + u" DC币&a！"))
         else:
-            changer.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&c 参数输入有误！"))
+            changer.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&a 已为&b" + str(args[0]) + u"&a减少&b" + str(Decimal(args[1]).quantize(Decimal('0.00')))[1:]
+                                                                    + u" DC币&a收购额度，目前收购额度为&b" + str(residue) + u" DC币&a！"))
     else:
         changer.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&c 您没有管理员权限！"))
 
@@ -588,6 +605,7 @@ def start():
     def indexEnviUpdateStart():
         "价格环境指数更新函数（开服时执行）"
         Config = ps.config.loadConfig('acquisition/parameterConfig.yml')
+        indexEnviHistory = ps.config.loadConfig('acquisition/researchIndexEnvi.yml')
         today = Config.get('today')
 
         if today != date.today().strftime("%Y-%m-%d"):
@@ -596,12 +614,15 @@ def start():
             Config.set('todayIndexEnvi', todayIndex)
             Config.set('today', str(date.today()))
             Config.save()
+            indexEnviHistory.set(str(date.today()), todayIndex)
+            indexEnviHistory.save()
 
         return True
     
     def newCycleStart():
         "新周期执行函数（开服时执行）"
         Config = ps.config.loadConfig('acquisition/parameterConfig.yml')
+        residueHistory = ps.config.loadConfig('acquisition/researchResidue.yml')
         cycleNow = Config.get('cycleNow')
 
         if cycleNow != date.today().strftime("%Y-%m-%d"):
@@ -622,11 +643,14 @@ def start():
                         tempList.append(NewCycleProcess().calHistory(section[i], t=i, g=0.7, tau=4))
                     historyDetail.set(str(sectionName), tempList)
                 elif str(sectionName)[len(playerName)+1:] == "RESIDUE": # 确定新周期余额
-                    historyDetail.set(str(sectionName), NewCycleProcess().residueRenew(Bukkit.getServer().getOfflinePlayer(playerName)))
+                    residueNew = NewCycleProcess().residueRenew(Bukkit.getServer().getOfflinePlayer(playerName))
+                    historyDetail.set(str(sectionName), residueNew)
+                    residueHistory.set(str(sectionName)+"."+date.today().strftime("%Y-%m-%d"), residueNew)
         
             historyDetail.save()
             Config.set("cycleNow", str(date.today()))
             Config.save()
+            residueHistory.save()
             if str(date.today()) not in historyMoneyDict.keys():
                 historyMoney.createSection(str(date.today()))
             historyMoney.save()
