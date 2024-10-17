@@ -163,7 +163,8 @@ class NewCycleProcess:
             + [date(2024, 9, 15) + timedelta(days=int(day+1)) for day in range(2)] \
             + [date(2024, 10, 1) + timedelta(days=int(day+1)) for day in range(6)]  # 中小假期
         self.holidayLong = [date(2024, 1, 1) + timedelta(days=int(day+1)) for day in range(60)] \
-            + [date(2024, 7, 1) + timedelta(days=int(day+1)) for day in range(60)]  # 长假期
+            + [date(2024, 7, 1) + timedelta(days=int(day+1)) for day in range(60)] \
+            + [date(2025, 1, 1) + timedelta(days=int(day+1)) for day in range(60)]  # 长假期
         self.activityDetail = ps.config.loadConfig('acquisition/activityDetail.yml')
         self.activityDetailDict = self.activityDetail.getValues(True)
         self.historyDetail = ps.config.loadConfig('acquisition/historyDetail.yml')
@@ -223,6 +224,9 @@ class NewCycleProcess:
                 activityPlayerLastCycle = 0
 
             activityPlayerTotal = activityPlayerNow
+            if "updateLatest" not in self.activityDetailDict: # 初始化
+                self.activityDetail.set("updateLatest", this_month)
+
             if this_month != str(self.activityDetailDict["updateLatest"]):  # 跨月处理
                 activityPlayerLastMonth = activity(player).getPlayerHot(last_month)
                 activityPlayerTotal += activityPlayerLastMonth
@@ -454,6 +458,7 @@ def newCycle(sender, label, args):
         if str(date.today()) not in historyMoneyDict.keys():
             historyMoney.createSection(str(date.today()))
         historyMoney.save()
+        residueHistory.save()
         player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&a 系统已进入新周期！"))
     else:
         player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&c 您没有管理员权限！"))
@@ -571,11 +576,11 @@ def commandHandler(sender, label, args):
     "命令处理器"
     player = sender.getPlayer()
     if not args:
-        player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&c 缺少参数！"))
+        player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&c 参数不正确！"))
     else:
         if args[0] == "sellout":
             if len(args) != 2:
-                player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&c 缺少参数！"))
+                player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&c 参数不正确！"))
             else:
                 sell(sender, label, args=args[1])
         elif args[0] == "indexenvi":
@@ -593,7 +598,7 @@ def commandHandler(sender, label, args):
                 player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&c 参数不正确！"))
         elif args[0] == "residuechange":
             if len(args) != 3:
-                player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&c 缺少参数！"))
+                player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&c 参数不正确！"))
             else:
                 residueChange(sender, label, args=args[1:]) # 仅限管理员
     
@@ -602,11 +607,13 @@ def commandHandler(sender, label, args):
 
 def start():
     "开服执行函数"
+    Config = ps.config.loadConfig('acquisition/parameterConfig.yml')
     def indexEnviUpdateStart():
         "价格环境指数更新函数（开服时执行）"
-        Config = ps.config.loadConfig('acquisition/parameterConfig.yml')
         indexEnviHistory = ps.config.loadConfig('acquisition/researchIndexEnvi.yml')
         today = Config.get('today')
+        if today == None:
+            today = "1900-01-01"
 
         if today != date.today().strftime("%Y-%m-%d"):
             todayIndex = Decimal(NewCycleProcess().indexEnvi(int(datetime.strptime(today, '%Y-%m-%d').strftime('%j')))).quantize(Decimal('0.000'), rounding=ROUND_DOWN)
@@ -621,7 +628,6 @@ def start():
     
     def newCycleStart():
         "新周期执行函数（开服时执行）"
-        Config = ps.config.loadConfig('acquisition/parameterConfig.yml')
         residueHistory = ps.config.loadConfig('acquisition/researchResidue.yml')
         cycleNow = Config.get('cycleNow')
 
@@ -659,7 +665,7 @@ def start():
 
     indexEnviUpdateStart()
     current_day = datetime.now()
-    if current_day.weekday() == 0:  # 每周一进入新周期
+    if current_day.weekday() == 0 or Config.get('cycleNow') == None:    # 每周一进入新周期
         newCycleStart()
 
 
