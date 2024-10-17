@@ -400,10 +400,11 @@ class GUIinput(GUIselect):
             self.player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&a 取消收购。"))
 
 
-def main(sender, label, args):
+def sell(sender, label, args):
     "收购主函数"
     player = sender.getPlayer()  # 获取玩家对象
-    itemToSell = str(args[0])  # 收购物品
+    itemToSell = str(args)  # 收购物品
+    print(itemToSell)
     itemID = calculate().dictGoods.index(itemToSell)
     itemToSellName = calculate().dictGoodsZh[itemID].decode('utf-8')
 
@@ -465,8 +466,8 @@ def indexEnviUpdate(sender, label, args):
         Config = ps.config.loadConfig('acquisition/parameterConfig.yml')
         today = Config.get('today')
         force = "FALSE"
-        if len(args) == 1:
-            force = str(args[0])
+        if args != None:
+            force = str(args)
 
         if today != date.today().strftime("%Y-%m-%d") or force == "TRUE":
             yesterdayIndex = Decimal(Config.get('todayIndexEnvi')).quantize(Decimal('0.000'))
@@ -552,6 +553,39 @@ def residueChange(sender, label, args):
     return True
 
 
+def commandHandler(sender, label, args):
+    "命令处理器"
+    player = sender.getPlayer()
+    if not args:
+        player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&c 缺少参数！"))
+    else:
+        if args[0] == "sellout":
+            if len(args) != 2:
+                player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&c 缺少参数！"))
+            else:
+                sell(sender, label, args=args[1])
+        elif args[0] == "indexenvi":
+            indexEnviUpdate(sender, label, args=None)
+        elif args[0] == "residue":
+            residueQuery(sender, label, args=None)
+        elif args[0] == "newcycle":
+            newCycle(sender, label, args=None) # 仅限管理员
+        elif args[0] == "newday":
+            if len(args) == 1:
+                indexEnviUpdate(sender, label, args=None) # 仅限管理员
+            elif len(args) == 2:
+                indexEnviUpdate(sender, label, args=args[1]) # 仅限管理员
+            else:
+                player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&c 参数不正确！"))
+        elif args[0] == "residuechange":
+            if len(args) != 3:
+                player.sendMessage(ChatColor.translateAlternateColorCodes('&', u"&e[DC收购]&c 缺少参数！"))
+            else:
+                residueChange(sender, label, args=args[1:]) # 仅限管理员
+    
+    return True
+
+
 def start():
     "开服执行函数"
     def indexEnviUpdateStart():
@@ -613,10 +647,5 @@ def stop():
     closeGuiForAll("acq.")
 
 
-ps.command.registerCommand(main, "acq.sellout")
-ps.command.registerCommand(newCycle, "acq.newcycle")             # 仅限管理员
-ps.command.registerCommand(indexEnviUpdate, "acq.newday")        # 仅限管理员
-ps.command.registerCommand(indexEnviQuery, "acq.indexenvi")
-ps.command.registerCommand(residueQuery, "acq.residue")
-ps.command.registerCommand(residueChange, "acq.residuechange")   # 仅限管理员
+ps.command.registerCommand(commandHandler, "acq")
 ps.listener.registerListener(onGUIOpen, InventoryClickEvent, True)
